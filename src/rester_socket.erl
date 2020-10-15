@@ -11,8 +11,7 @@
 -export([accept/1, accept/2]).
 -export([async_accept/1, async_accept/2]).
 -export([connect/2, connect/3, connect/4, connect/5]).
-%% -export([async_connect/2, async_connect/3, async_connect/4]).
--export([async_socket/2]).
+-export([async_socket/2, async_socket/3]).
 -export([close/1, shutdown/2]).
 -export([send/2, recv/2, recv/3]).
 -export([getopts/2, setopts/2, sockname/1, peername/1]).
@@ -46,7 +45,7 @@ listen(Port, Protos=[tcp|_], Opts0) ->
     Opts1 = proplists:expand([{binary, [{mode, binary}]},
 			      {list, [{mode, list}]}], Opts0),
     {TcpOpts, Opts2} = split_options(tcp_listen_options(), Opts1),
-    ?log_debug("listen options=~w, other=~w\n", [TcpOpts, Opts2]),
+    ?log_debug("listen options=~p, other=~p", [TcpOpts, Opts2]),
     Active = proplists:get_value(active, TcpOpts, false),
     Mode   = proplists:get_value(mode, TcpOpts, list),
     Packet = proplists:get_value(packet, TcpOpts, 0),
@@ -138,18 +137,18 @@ connect(Host, Port, Protos=[tcp|_], Opts0, Timeout) -> %% tcp socket
     end.
 
 connect_upgrade(X, Protos0, Timeout) ->
-    ?log_debug("connect protos=~w\n", [Protos0]),
+    ?log_debug("connect protos=~p", [Protos0]),
     case Protos0 of
 	[ssl|Protos1] ->
 	    Opts = X#rester_socket.opts,
 	    {SSLOpts0,Opts1} = split_options(ssl_connect_opts(),Opts),
 	    {_,SSLOpts} = split_options([ssl_imp], SSLOpts0),
-	    ?log_debug("SSL upgrade, options = ~w\n", [SSLOpts]),
-	    ?log_debug("before ssl:connect opts=~w\n", 
+	    ?log_debug("SSL upgrade, options = ~p", [SSLOpts]),
+	    ?log_debug("before ssl:connect opts=~p", 
 		 [getopts(X, [active,packet,mode])]),
 	    case ssl_connect(X#rester_socket.socket, SSLOpts, Timeout) of
 		{ok,S1} ->
-		    ?log_debug("ssl:connect opt=~w\n", 
+		    ?log_debug("ssl:connect opt=~p", 
 			 [ssl:getopts(S1, [active,packet,mode])]),
 		    X1 = X#rester_socket { socket=S1,
 					  mdata = ssl,
@@ -170,7 +169,7 @@ connect_upgrade(X, Protos0, Timeout) ->
 	    setopts(X, [{mode,X#rester_socket.mode},
 			{packet,X#rester_socket.packet},
 			{active,X#rester_socket.active}]),
-	    ?log_debug("after upgrade opts=~w\n", 
+	    ?log_debug("after upgrade opts=~p", 
 		 [getopts(X, [active,packet,mode])]),
 	    {ok,X}
     end.
@@ -205,7 +204,10 @@ async_accept(X,Timeout) when
 	    {error, proto_not_supported}
     end.
 
-async_socket(Listen, Socket)
+async_socket(Listen, Socket) ->
+    async_socket(Listen, Socket, infinity).
+
+async_socket(Listen, Socket, Timeout)
   when is_record(Listen, rester_socket), is_port(Socket) ->
     Inherit = [nodelay,keepalive,delay_send,priority,tos],
     case getopts(Listen, Inherit) of
@@ -216,7 +218,7 @@ async_socket(Listen, Socket)
 		    {ok,Mod} = inet_db:lookup_socket(Listen#rester_socket.socket),
 		    inet_db:register_socket(Socket, Mod),
 		    X = Listen#rester_socket { transport=Socket, socket=Socket },
-		    accept_upgrade(X, tl(X#rester_socket.protocol), infinity);
+		    accept_upgrade(X, tl(X#rester_socket.protocol), Timeout);
 		Error ->
 		    prim_inet:close(Socket),
 		    Error
@@ -236,7 +238,7 @@ accept(X, Timeout) when
     accept_upgrade(X, X#rester_socket.protocol, Timeout).
 
 accept_upgrade(X=#rester_socket { mdata = M }, Protos0, Timeout) ->
-    ?log_debug("accept protos=~w\n", [Protos0]),
+    ?log_debug("accept protos=~p", [Protos0]),
     case Protos0 of
 	[tcp|Protos1] ->
 	    case M:accept(X#rester_socket.socket, Timeout) of
@@ -250,12 +252,12 @@ accept_upgrade(X=#rester_socket { mdata = M }, Protos0, Timeout) ->
 	    Opts = X#rester_socket.opts,
 	    {SSLOpts0,Opts1} = split_options(ssl_listen_opts(),Opts),
 	    {_,SSLOpts} = split_options([ssl_imp], SSLOpts0),
-	    ?log_debug("SSL upgrade, options = ~w\n", [SSLOpts]),
-	    ?log_debug("before ssl_accept opt=~w\n", 
+	    ?log_debug("SSL upgrade, options = ~p", [SSLOpts]),
+	    ?log_debug("before ssl_accept opt=~p", 
 		 [getopts(X, [active,packet,mode])]),
 	    case ssl_accept(X#rester_socket.socket, SSLOpts, Timeout) of
 		{ok,S1} ->
-		    ?log_debug("ssl_accept opt=~w\n", 
+		    ?log_debug("ssl_accept opt=~p", 
 			 [ssl:getopts(S1, [active,packet,mode])]),
 		    X1 = X#rester_socket{socket=S1,
 				      mdata = ssl,
@@ -264,7 +266,7 @@ accept_upgrade(X=#rester_socket { mdata = M }, Protos0, Timeout) ->
 				      tags={ssl,ssl_closed,ssl_error}},
 		    accept_upgrade(X1, Protos1, Timeout);
 		Error={error,_Reason} ->
-		    ?log_warning("ssl:ssl_accept error=~w\n", 
+		    ?log_warning("ssl:ssl_accept error=~p\n", 
 			 [_Reason]),
 		    Error
 	    end;
@@ -279,7 +281,7 @@ accept_upgrade(X=#rester_socket { mdata = M }, Protos0, Timeout) ->
 	    setopts(X, [{mode,X#rester_socket.mode},
 			{packet,X#rester_socket.packet},
 			{active,X#rester_socket.active}]),
-	    ?log_debug("after upgrade opts=~w\n", 
+	    ?log_debug("after upgrade opts=~p", 
 		 [getopts(X, [active,packet,mode])]),
 	    {ok,X}
     end.
@@ -288,32 +290,32 @@ accept_probe_ssl(X=#rester_socket { mdata=M, socket=S,
 				 tags = {TData,TClose,TError}},
 		 Protos,
 		 Timeout) ->
-    ?log_debug("accept_probe_ssl protos=~w\n", [Protos]),
+    ?log_debug("accept_probe_ssl protos=~p", [Protos]),
     setopts(X, [{active,once}]),
     receive
 	{TData, S, Data} ->
-	    ?log_debug("Accept data=~w\n", [Data]),
+	    ?log_debug("Accept data=~p", [Data]),
 	    case request_type(Data) of
 		ssl ->
-		    ?log_debug("request type: ssl\n",[]),
+		    ?log_debug("request type: ssl",[]),
 		    ok = M:unrecv(S, Data),
-		    ?log_debug("~w:unrecv(~w, ~w)\n", [M,S,Data]),
+		    ?log_debug("~p:unrecv(~p, ~p)", [M,S,Data]),
 		    %% insert ssl after transport
 		    Protos1 = X#rester_socket.protocol--([probe_ssl|Protos]),
 		    Protos2 = Protos1 ++ [ssl|Protos],
 		    accept_upgrade(X#rester_socket{protocol=Protos2},
 				   [ssl|Protos],Timeout);
 		_ -> %% not ssl
-		    ?log_debug("request type: NOT ssl\n",[]),
+		    ?log_debug("request type: NOT ssl",[]),
 		    ok = M:unrecv(S, Data),
-		    ?log_debug("~w:unrecv(~w, ~w)\n", [M,S,Data]),
+		    ?log_debug("~w:unrecv(~w, ~w)", [M,S,Data]),
 		    accept_upgrade(X,Protos,Timeout)
 	    end;
 	{TClose, S} ->
-	    ?log_debug("closed\n", []),
+	    ?log_debug("closed", []),
 	    {error, closed};
 	{TError, S, Error} ->
-	    ?log_warning("error ~w\n", [Error]),
+	    ?log_warning("error ~w", [Error]),
 	    Error
     end.
 

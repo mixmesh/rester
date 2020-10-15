@@ -13,7 +13,8 @@
 	  mode=list,    %% :: list|binary 
 	  packet=0,     %% packet mode
 	  opts = [],    %% extra options
-	  tags = {data,close,error}   %% data tags used
+	  tags = {data,close,error},  %% data tags used
+	  flow = undefined %% Flow control policy, if any
 	}).
 
 -type rester_socket() :: #rester_socket{}.

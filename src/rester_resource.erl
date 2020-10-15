@@ -29,6 +29,8 @@
 %% For dialyzer
 -type start_options()::{linked, TrueOrFalse::boolean()}.
 
+-include("../include/rester.hrl").
+
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -197,7 +199,7 @@ calc_avail() ->
 	    min(MaxPorts - ReservedPorts, 
 		MaxFds - ReservedFds - length(ErlangFds));
 	{error, _Reason} = E ->
-	    lager:debug("calc_avail failed, reason ~p",[_Reason]),
+	    ?log_debug("calc_avail failed, reason ~p",[_Reason]),
 	    E
     end.
 
@@ -225,6 +227,6 @@ ulimit_fds() ->
 		error:_ ->   {error, list_to_integer_failed}
 	    end;
 	_Other ->
-	    lager:error("ulimit result ~p",[_Other]),
+	    ?log_error("ulimit result ~p",[_Other]),
 	    {error, ulimit_failed}
     end.

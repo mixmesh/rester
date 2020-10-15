@@ -420,9 +420,8 @@ code_change(_OldVsn, State, _Extra) ->
 create_socket_session(Listen, Socket, State) ->
     receive
 	controlling ->  %% control sync
-	    case rester_socket:async_socket(Listen, Socket, 
-					 [delay_auth], 
-					 ?RESTER_DEFAULT_ACCEPT_TIMEOUT) of
+	    case rester_socket:async_socket(Listen, Socket,
+					    ?RESTER_DEFAULT_ACCEPT_TIMEOUT) of
 		{ok, XSocket} ->
 		    {ok,XState0} = 
 			rester_socket_session:init([XSocket,

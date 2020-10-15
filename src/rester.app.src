@@ -4,5 +4,6 @@
   {vsn, "%VSN%"},
   {modules, [%MODULES%]},
   {env, []},
-  {applications,[kernel,stdlib]}
+  {mod, {rester_app, []}},
+  {applications,[kernel,stdlib,ssl]}
   ]}.

@@ -131,7 +131,7 @@ init(Socket, Options) ->
     ?log_debug("connection on: ~p ", [Socket]),
     {ok, _PeerName} = rester_socket:peername(Socket),
     {ok, _SockName} = rester_socket:sockname(Socket),
-    ?log_debug("connection from peer: ~p, sockname: ~p,\n"
+    ?log_debug("connection from peer: ~p, sockname: ~p,"
 		"options ~p", [_PeerName, _SockName, Options]),
     Access = proplists:get_value(access, Options, []),
     RH = proplists:get_value(request_handler, Options, undefined),
@@ -318,7 +318,7 @@ handle_digest_auth(_Socket, Request, _Body, {digest,AuthParams},
     Response = proplists:get_value(<<"response">>,AuthParams,""),
     Method = Request#http_request.method,
     Digest = rester_http:make_digest_response(Cred, Method, AuthParams),
-    %% io:format("response=~p, digest=~p\n", [Response,Digest]),
+    %% io:format("response=~p, digest=~p", [Response,Digest]),
     if Digest =:= Response ->
 	    ok;
        true ->
@@ -405,7 +405,7 @@ unq_([]) -> [].
 
 handle_body(Socket, Request, Body, State) ->
     RH = State#state.request_handler,
-    ?log_debug("calling ~p with -BODY:\n~s\n-END-BODY\n", [RH, Body]),
+    ?log_debug("calling ~p with -BODY:\n~s\n-END-BODY", [RH, Body]),
     {M, F, As} = request_handler(RH, Socket, Request, Body),
     try apply(M, F, As) of
 	ok -> {ok, State};
@@ -579,7 +579,7 @@ opt_take(K, L, Def) ->
 %% @private
 handle_http_request(Socket, Request, Body) ->
     Url = Request#http_request.uri,
-    ?log_debug("\n-BODY:\n~s\n-END-BODY\n", [Body]),
+    ?log_debug("\n-BODY:\n~s\n-END-BODY", [Body]),
     if Request#http_request.method =:= 'GET',
        Url#url.path =:= "/quit" ->
 	    response_r(Socket, Request, 200, "OK", "QUIT",
