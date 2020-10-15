@@ -20,6 +20,7 @@
 -export([stats/0, getstat/2]).
 -export([tags/1, socket/1]).
 -export([request_type/1]).
+-export([is_ssl/1]).
 
 -include("../include/rester.hrl").
 -include("../include/rester_socket.hrl").
@@ -385,6 +386,9 @@ sockname(#rester_socket { mctl = M, socket = S}) ->
 
 peername(#rester_socket { mctl = M, socket = S}) ->
     M:peername(S).
+
+is_ssl(#rester_socket { mctl = ssl}) -> true;
+is_ssl(_) -> false.
 
 stats() ->
     inet:stats().
