@@ -212,7 +212,7 @@ wpost_body(Req, Data) ->
     end.
 
 wpost_json_body(Req, Data) ->
-    {ok,Req,rester_json:encode(Data)}.
+    {ok,Req,jsone:encode(Data)}.
 
 wpost_xml_body(Req, Data) ->
     {ok,Req,xmerl:export_simple(Data, xmerl_xml)}.

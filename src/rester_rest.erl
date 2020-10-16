@@ -22,7 +22,6 @@
 -define(SEND_TIMEOUT, infinity). %% default send timeout
 
 -define(DEFAULT_PORT, 7777).
--define(DEFAULT_XYLAN, "/tmp/hoc33").
 -define(LATEST_VSN, v1).
 
 -ifdef(OTP_RELEASE). %% this implies 21 or higher
@@ -43,7 +42,7 @@ start_link(Args) ->
 do_start(Start, Args0) ->
     ?log_debug("starting with ~p", [Args0]),
     Dir = code:priv_dir(rester),
-    case proplists:get_value(port, Args0) of
+    case proplists:get_value(port, Args0, ?DEFAULT_PORT) of
 	undefined -> {error, no_port};
 	Port ->
 	    ?log_info("starting on ~p", [Port]),
@@ -65,6 +64,7 @@ do_start(Start, Args0) ->
 		       {keyfile, filename:join(Dir, "key.pem")},
 		       {certfile, filename:join(Dir, "cert.pem")},
 		       {nodelay, true},
+		       {reuseaddr, true},
 		       {idle_timeout, IdleTimeout},
 		       {send_timeout, SendTimeout} | SO1],
 	    rester_http_server:Start(Port, ExoArgs)
@@ -157,20 +157,11 @@ handle_http_get(Socket, Request, Url, Tokens, Body, v3) ->
 	["system-time"] ->
 	    response(Socket, Request, 
 		     {ok, integer_to_list(erlang:system_time(milli_seconds))});
-	["event-channel"] ->
-	    F = parse_filter(Url#url.querypart),
-	    event_channel(Access, Socket, Request, F, v3);
-	["event-channel", Id, "refresh"] ->
-	    response(Socket, Request, 
-		     rester_channel:refresh_event_channel(Access, Id));
 	_Other ->
 	    handle_http_get(Socket, Request, Url, Tokens, Body, v2)
     end;
 handle_http_get(Socket, Request, Url, Tokens, Body, v2) ->
     case Tokens of
-	["event-channel"] ->
-	    F = parse_filter(Url#url.querypart),
-	    event_channel(access(Socket), Socket, Request, F, v2);
 	_Other ->
 	    handle_http_get(Socket, Request, Url, Tokens, Body, v1)
     end;
@@ -187,28 +178,13 @@ handle_http_get(Socket, Request, Url, Tokens, _Body, v1) ->
 			    [{Name, Fs}|Acc]
 		    end, [], pki_db),
 	    response(Socket,Request,html_doc(html_table(Tab)));
-
-	["event-channel"] ->
-	    F = parse_filter(Url#url.querypart),
-	    event_channel(Access, Socket, Request, F, v1);
 	Tokens ->
 	    ?log_debug("~p not found", [Tokens]),
 	    response(Socket, Request, {error, not_found})
     end.
 
 %% General PUT request uri:
-%% inventory/<label>/present  set present for item
-%% inventory/present/<label>  set present for item
-%% parameter/<label>/<param>  set value for param on label(channel)
-%% value/<label>              set item value
-%% <label>/parameter/<param>  set value for param on label(channel)
-%% <label>/value              set item value
-%% <node-id>/output/<i>
-%% <node-id>/output/<i>/<param>
-%% <node-id>/input/<i>
-%% <node-id>/input/<i>/<param>
-%% <node-id>/adc/<i>
-%% <node-id>/param
+%% - [/vi]/item
 %%
 handle_http_put(Socket, Request, Body) ->
     Url = Request#http_request.uri,
@@ -388,101 +364,6 @@ parse_data(List) when is_list(List) ->
 		    List
 	    end
     end.
-
-
-%--------------------------------------------------------------------
-%% @doc
-%% Subscribes to events and sends them on using http
-%% @end
-%%--------------------------------------------------------------------
-event_channel(Access, Socket, Request, Filter, Version)
-  when Access =:= local;
-       Access =:= secure;
-       Access =:= network ->
-    ?log_debug("version ~p.",[Version]),
-    ?log_debug("options ~p.",[Filter]),
-    {ok, Id} = seaz_db_srv:subscribe(Filter),
-    rester_http_server:response_r(Socket,Request,200,"OK","",
-			       [{content_type,"application/json"},
-				{transfer_encoding, "chunked"}]),
-    rester_socket:setopts(Socket, [{active,once}]),
-    SO = socket_options(),
-    TimeOut = proplists:get_value(idle_timeout, SO, ?IDLE_TIMEOUT),
-    Timer = inactivity_check(TimeOut),
-    transfer_id(Id, Version),
-    event_loop(Socket, Version, Timer, TimeOut, 0);
-event_channel(_Access, Socket, Request, _Filter, _Version) ->
-    response(Socket, Request, {error, no_access}).
-
-event_loop(Socket, Version, Timer, TimeOut, SyncCounter) ->
-    receive
-	{Tag, _Port} when 
-	      (Tag =:= tcp_closed orelse Tag =:= ssl_closed) ->
-	    ?log_debug("got tcp/ssl close"),
-	    stop;
-	close -> %% From close_event_channel request
-	    ?log_debug("got close"),
-	    rester_http:send_chunk_end(Socket,""), %% Send trailer ??
-	    stop;
-	sync ->
-	    event_loop(Socket, Version, Timer, TimeOut,
-		       SyncCounter + 1);
-	{timeout, Timer, inactivity_check} when SyncCounter =:= 0 ->
-	    ?log_info("closing due to inactivity"),
-	    close_event_channel(Socket, Version);
-	{timeout, Timer, inactivity_check} when SyncCounter =/= 0 ->
-	    NewTimer = inactivity_check(TimeOut),
-	    event_loop(Socket, Version, NewTimer, TimeOut, 0);
-	{timeout, _OtherTimer, inactivity_check} ->
-	    ?log_warning("unknown timer ~p", [_OtherTimer]),
-	    event_loop(Socket, Version, Timer, TimeOut,SyncCounter);
-	{Tag, _Socket, Reason}
-	  when Tag =:= tcp_error;
-	       Tag =:= ssl_error ->
-	    ?log_error("error = ~p, terminating", [Reason]),
-	    stop;
-	Event when is_list(Event) ->
-	    ?log_debug("event ~p received", [Event]),
-	    case rester_channel:transfer_event(Socket, Event, Version) of
-		stop ->
-		    stop;
-		_ ->
-		    event_loop(Socket, Version, Timer, TimeOut,
-			       SyncCounter)
-	    end;
-
-	%% FIXME: maybe exit here if data is sent from client?
-	_Other ->
-	    ?log_warning("received unknown event ~p", [_Other]),
-	    event_loop(Socket, Version, Timer, TimeOut, SyncCounter)
-    end.
-
-close_event_channel(Socket, Version) ->
-    Event = [{'event-type', 'system-event'}, {group, system},
-	     {'system-event', 'closed'}, {data, true}],
-    rester_channel:transfer_event(Socket, Event, Version),
-    rester_http:send_chunk_end(Socket,""), %% Send trailer ??
-    stop.
-
-inactivity_check(infinity) ->
-    ?log_debug("no inactivity check"),
-    undefined;
-inactivity_check(TimeOut) when is_integer(TimeOut) ->
-    erlang:start_timer(TimeOut, self(), inactivity_check);
-inactivity_check(_Other) ->
-    ?log_error("faulty timeout ~p, using default ~p", [?IDLE_TIMEOUT]),
-    inactivity_check(?IDLE_TIMEOUT).
-
-transfer_id(_Id, v1) ->
-    ok;
-transfer_id(Id, _Version) ->
-    %% keep this order, szevt expect this. For now.
-    %% AND do not reverse the list in transfer_event :-)
-    Event = [{'event-type', 'system-event'},
-	     {'system-event','channel-id'},
-	     {group, system},
-	     {data, Id}],
-    self() ! Event. 
 
 %%%-------------------------------------------------------------------
 %% Check conditional headers

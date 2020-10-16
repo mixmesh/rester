@@ -8,6 +8,7 @@
 -module(rester).
 
 -export([start/0, stop/0]).
+-export([config_change/3]).
 
 start() ->
     application:ensure_all_started(rester).
@@ -15,4 +16,5 @@ start() ->
 stop() ->
     application:stop(rester).
 
-    
+config_change(_Changed,_New,_Removed) ->
+    ok.
