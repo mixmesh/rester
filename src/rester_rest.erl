@@ -47,18 +47,18 @@ do_start(Start, Args0) ->
 	Port ->
 	    ?log_info("starting on ~p", [Port]),
 	    SO = socket_options(Args0),
-	    IdleTimeout = 
+	    IdleTimeout =
 		case proplists:get_value(idle_timeout, SO, ?IDLE_TIMEOUT) of
 		    I when is_integer(I) -> I + 100; %% Give exo extra time
 		    T -> T
 		end,
-	    SendTimeout = 
+	    SendTimeout =
 		proplists:get_value(send_timeout, SO, ?SEND_TIMEOUT),
 
 	    SO1 = lists:foldl(fun(Key,Ai) ->
 				      proplists:delete(Key,Ai)
 			      end, SO, [port,idle_timeout,send_timeout]),
-	    ExoArgs = [{request_handler, 
+	    ExoArgs = [{request_handler,
 			{?MODULE, handle_http_request, []}},
 		       {verify, verify_none},
 		       {keyfile, filename:join(Dir, "key.pem")},
@@ -80,7 +80,7 @@ socket_options(Args) ->
     end.
 
 handle_http_request(Socket, Request, Body, Options) ->
-    ?log_debug("request = ~s, headers=~s, body=~p", 
+    ?log_debug("request = ~s, headers=~s, body=~p",
 		[rester_http:format_request(Request),
 		 rester_http:format_hdr(Request#http_request.headers),
 		 Body]),
@@ -95,7 +95,7 @@ handle_http_request(Socket, Request, Body, Options) ->
     end.
 
 handle_http_request_(Socket, Request, Body) ->
-    case Request#http_request.method of 
+    case Request#http_request.method of
 	'GET' ->
 	    handle_http_get(Socket, Request, Body);
 	'PUT' ->
@@ -120,9 +120,9 @@ handle_http_get(Socket, Request, Body) ->
 	    rester_http_server:response_r(Socket,Request,200, "OK",
 					  Object,
 					  [{content_type,"application/json"}]);
-	["v1" | Tokens] -> 
+	["v1" | Tokens] ->
 	    handle_http_get(Socket, Request, Url, Tokens, Body, v1);
-	["v2" | Tokens] -> 
+	["v2" | Tokens] ->
 	    handle_http_get(Socket, Request, Url, Tokens, Body, v2);
 	["v3" | Tokens] ->
 	    handle_http_get(Socket, Request, Url, Tokens, Body, v3);
@@ -136,7 +136,7 @@ handle_http_get(Socket, Request, Body) ->
 	Tokens = [] ->
 	    handle_http_get(Socket, Request, Url, Tokens, Body, v3);
 	["v4" | _Tokens] ->
-	    response(Socket, Request, 
+	    response(Socket, Request,
 		     {error, bad_request, "v4 not implemented"});
 	Tokens ->
 	    handle_http_get(Socket, Request, Url, Tokens, Body, v1)
@@ -155,7 +155,7 @@ handle_http_get(Socket, Request, Url, Tokens, Body, v3) ->
 	["index"] ->
 	    response(Socket, Request, index(Accept));
 	["system-time"] ->
-	    response(Socket, Request, 
+	    response(Socket, Request,
 		     {ok, integer_to_list(erlang:system_time(milli_seconds))});
 	_Other ->
 	    handle_http_get(Socket, Request, Url, Tokens, Body, v2)
@@ -171,9 +171,9 @@ handle_http_get(Socket, Request, Url, Tokens, _Body, v1) ->
 	["public"] ->
 	    %% list public keys in a table
 	    Tab = ets:foldl(
-		    fun(#pki_user{name=Name,public_key=Pk}, Acc) ->
+		    fun(#pki_user{nym=Name,public_key=Pk}, Acc) ->
 			    MD5 = crypto:hash(md5, belgamal:public_key_to_binary(Pk)),
-			    Fs = [tl(integer_to_list(B+16#100,16)) || 
+			    Fs = [tl(integer_to_list(B+16#100,16)) ||
 				     <<B>> <= MD5],
 			    [{Name, Fs}|Acc]
 		    end, [], pki_db),
@@ -222,9 +222,9 @@ handle_http_put(Socket, Request, _Url, Tokens, Body, v1) ->
 handle_http_post(Socket, Request, Body) ->
    Url = Request#http_request.uri,
     case string:tokens(Url#url.path,"/") of
-	["v1" | Tokens] -> 
+	["v1" | Tokens] ->
 	    handle_http_post(Socket, Request, Url, Tokens, Body, v1);
-	["v2" | Tokens] -> 
+	["v2" | Tokens] ->
 	    handle_http_post(Socket, Request, Url, Tokens, Body, v2);
 	["v3" | Tokens] ->
 	    handle_http_post(Socket, Request, Url, Tokens, Body, v3);
@@ -239,7 +239,7 @@ handle_http_post(Socket, Request, Url, Tokens, Body, v3) ->
     end;
 handle_http_post(Socket, Request, Url, Tokens, Body, v2) ->
     Data = parse_body(Request,Body),
-    
+
     case Tokens of
 	_Other ->
 	    handle_http_post(Socket, Request, Url, Tokens, Body, v1)
@@ -252,7 +252,7 @@ handle_http_post(Socket, Request, _Url, Tokens, Body, v1) ->
 	    ?log_debug("~p not found", [Tokens]),
 	    response(Socket, Request, {error, not_found})
     end.
-    
+
 %%%-------------------------------------------------------------------
 %%% Parsing
 %%%-------------------------------------------------------------------
@@ -311,8 +311,8 @@ parse_body(Request, Body) ->
 	List when is_list(List) -> List;
 	Error -> Error
     end.
-   
-      
+
+
 try_parse_body(Request, Body) ->
     try parse_data(Request, Body) of
 	{error, _Reason} ->
@@ -321,7 +321,7 @@ try_parse_body(Request, Body) ->
 	Result -> Result
     catch error:Reason -> {error, Reason}
     end.
-    
+
 
 parse_data(Request, Body) when is_binary(Body)->
     parse_data(Request, binary_to_list(Body));
@@ -350,11 +350,11 @@ parse_json_string(Data) ->
 	    {error, Reason}
     end.
 
-parse_data(I) when is_integer(I) -> 
+parse_data(I) when is_integer(I) ->
     I;
-parse_data(F) when is_float(F) -> 
+parse_data(F) when is_float(F) ->
     F;
-parse_data(List) when is_list(List) -> 
+parse_data(List) when is_list(List) ->
     try list_to_integer(List) of
 	I -> I
     catch _:_ ->
@@ -446,40 +446,40 @@ if_modified_since(IfModifiedSince, Lmt) ->
 %%%-------------------------------------------------------------------
 response(Socket,Request,ok)  ->
     rester_http_server:response_r(Socket,Request,200,"OK","",[]);
-response(Socket,Request,{ok, String}) 
+response(Socket,Request,{ok, String})
   when is_list(String) ->
     rester_http_server:response_r(Socket,Request,200,"OK",String,[]);
-response(Socket,Request,{ok, Atom}) 
+response(Socket,Request,{ok, Atom})
   when is_atom(Atom) ->
     rester_http_server:response_r(Socket,Request,200,"OK",
 			       atom_to_list(Atom),[]);
-response(Socket,Request,{ok, Bin}) 
+response(Socket,Request,{ok, Bin})
   when is_binary(Bin) ->
     rester_http_server:response_r(Socket,Request,200,"OK",
 			       Bin,[]);
-response(Socket,Request,{ok, String, json}) 
+response(Socket,Request,{ok, String, json})
   when is_list(String) ->
     rester_http_server:response_r(Socket,Request,200,"OK",String,
 			       [{content_type,"application/json"}]);
-response(Socket,Request,{ok, String, html}) 
+response(Socket,Request,{ok, String, html})
   when is_list(String) ->
     rester_http_server:response_r(Socket,Request,200,"OK",String,
 			       [{content_type,"text/html"}]);
-response(Socket,Request,{ok, {format, Args}}) 
+response(Socket,Request,{ok, {format, Args}})
   when is_list(Args) ->
     {ContentType,Reply} = format_reply(Args, Request),
     rester_http_server:response_r(Socket, Request, 200, "OK", Reply,
 			       [{content_type,ContentType}]);
 
-response(Socket,Request,{error, not_modified, ErrorMsg})  
+response(Socket,Request,{error, not_modified, ErrorMsg})
   when is_list(ErrorMsg) ->
-    rester_http_server:response_r(Socket,Request,304,"Not Modified", 
+    rester_http_server:response_r(Socket,Request,304,"Not Modified",
 			       ErrorMsg,[]);
 response(Socket,Request,{error, not_modified}) ->
     rester_http_server:response_r(Socket,Request,304,"Not Modified",
 			       "Object not modified.",[]);
 %% Client errors
-response(Socket,Request,{error, bad_request, ErrorMsg}) 
+response(Socket,Request,{error, bad_request, ErrorMsg})
   when is_list(ErrorMsg) ->
     rester_http_server:response_r(Socket,Request,400,"Bad Request",
 			       ErrorMsg,[]);
@@ -521,20 +521,20 @@ response(Socket,Request,{error, unknown})  ->
 response(Socket,Request,{error, sleep_not_allowed})  ->
     rester_http_server:response_r(Socket,Request,535,"Sleep not allowed","",[]);
 %% Internal errors
-response(Socket,Request,{error, internal_error, ErrorMsg}) 
+response(Socket,Request,{error, internal_error, ErrorMsg})
   when is_list(ErrorMsg)->
     rester_http_server:response_r(Socket,Request,500,"Internal Server Error",
 			       ErrorMsg,[]);
-response(Socket,Request,{error, Reason, ErrorMsg})  
+response(Socket,Request,{error, Reason, ErrorMsg})
   when is_list(ErrorMsg) ->
     ?log_debug("can not handle error ~p:~p", [Reason, ErrorMsg]),
     rester_http_server:response_r(Socket,Request,500,"Internal Server Error",
 			       ErrorMsg,[]);
-response(Socket,Request,{error, Reason}) 
+response(Socket,Request,{error, Reason})
   when is_list(Reason)->
     rester_http_server:response_r(Socket,Request,500,"Internal Server Error",
 			       Reason,[]);
-response(Socket,Request,{error, Reason}) 
+response(Socket,Request,{error, Reason})
   when is_atom(Reason)->
     rester_http_server:response_r(Socket,Request,500,"Internal Server Error",
 			       atom_to_list(Reason),[]);
@@ -542,7 +542,7 @@ response(Socket,Request,{error, Reason}) ->
     ?log_warning("can not handle error ~p", [Reason]),
     rester_http_server:response_r(Socket,Request,500,"Internal Server Error",
 			       "",[]);
-response(Socket,Request,{error, Reason, Format, Args}) 
+response(Socket,Request,{error, Reason, Format, Args})
   when is_list(Format), is_list(Args) ->
     ErrorMsg = io_lib:format(Format, Args),
     response(Socket,Request,{error, Reason, ErrorMsg});
