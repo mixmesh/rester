@@ -1,7 +1,7 @@
 -ifndef(_RESTER_HRL_).
 -define(_RESTER_HRL_, true).
 
--include_lib("obscrete/include/log.hrl").
+-include_lib("apptools/include/log.hrl").
 
 -type path() :: string().
 -type user() :: binary().
@@ -44,7 +44,7 @@
 %% -define(log_debug(F), ok).
 %% -endif.
 
-%% -define(log_warning(F,A), io:format("warning: "++(F)++"\n",(A))).
+%% -define(log_warning(F,A), io:format("warning: "++(F)++"\n"
 %% -define(log_warning(F), io:format("warning: "++(F)++"\n",[])).
 %% -define(log_error(F,A), io:format("error: "++(F)++"\n",(A))).
 %% -define(log_error(F), io:format("error: "++(F)++"\n",[])).
