@@ -97,9 +97,9 @@ do_start(Start, Port, Options) ->
 	    rester_socket_server:Start(Port, 
 				       [tcp,probe_ssl,http],
 				       [{active,once},{reuseaddr,true},
-					{verify, verify_none},
-					{keyfile, filename:join(Dir, "host.key")},
-					{certfile, filename:join(Dir, "host.cert")}
+					{verify, verify_none}
+					%% {keyfile, filename:join(Dir, "host.key")},
+					%% {certfile, filename:join(Dir, "host.cert")}
 				       | Options1],
 				       ?MODULE, SessionOptions);
 	E -> E

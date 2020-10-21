@@ -39,13 +39,13 @@
 		  {stop, Reason::term()}.
 
 init(Args) ->
-    ?log_debug("args = ~p,\n pid = ~p\n", [Args, self()]),
+    %% ?log_debug("args = ~p,\n pid = ~p\n", [Args, self()]),
     case rester_resource:calc_avail() of
 	Avail when is_integer(Avail) ->
 	    {ok, #ctx {state = up, available = Avail, resources = dict:new()}};
 	{error, Error} ->
-	    ?log_error("Not possible to determine system resources, "
-		       "reason ~p", [Error]),
+	    %% ?log_error("Not possible to determine system resources, "
+	    %% "reason ~p", [Error]),
 	    {stop, Error}
     end.
 
