@@ -201,8 +201,6 @@ wpost_body(Req, Data) ->
 	    wpost_form_body(Req, Data);
 	"application/json" ->
 	    wpost_json_body(Req, Data);
-	"application/xml" ->
-	    wpost_xml_body(Req, Data);
 	"application/x-www-form-urlencoded" ->
 	    wpost_form_body(Req, Data);
 	"multipart/"++_ ->
@@ -214,9 +212,6 @@ wpost_body(Req, Data) ->
 wpost_json_body(Req, Data) ->
     {ok,Req,jsone:encode(Data)}.
 
-wpost_xml_body(Req, Data) ->
-    {ok,Req,xmerl:export_simple(Data, xmerl_xml)}.
-    
 wpost_form_body(Req, Data) ->
     {ok,Req,format_query(Data)}.
 
