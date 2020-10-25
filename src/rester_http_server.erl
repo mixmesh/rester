@@ -1,7 +1,7 @@
 %%% @author Tony Rogvall <tony@rogvall.se>
 %%% @copyright (C) 2020, Tony Rogvall
 %%% @doc
-%%%    http server 
+%%%    http server
 %%% @end
 %%% Created : 15 Oct 2020 by Tony Rogvall <tony@rogvall.se>
 
@@ -31,7 +31,8 @@
 	  authorized = false :: boolean(),
 	  private_key = "" :: string(),
 	  access = [] :: [access()],
-	  request_handler
+	  request_handler,
+          neighbour_workers :: [{atom(), pid()}]
 	}).
 
 %% configurable start
@@ -87,14 +88,14 @@ start_link(Port, Options) ->
 
 do_start(Start, Port, Options) ->
     ?log_debug("~w: port ~p, server options ~p", [Start, Port, Options]),
-    {SessionOptions,Options1} = 
+    {SessionOptions,Options1} =
 	rester_lib:split_options([request_handler,access,private_key,idle_timeout],
 			      Options),
     Dir = code:priv_dir(rester),
     Access = proplists:get_value(access, Options, []),
     case rester_lib:validate_access(Access) of
 	ok ->
-	    rester_socket_server:Start(Port, 
+	    rester_socket_server:Start(Port,
 				       [tcp,probe_ssl,http],
 				       [{active,once},{reuseaddr,true},
 					{verify, verify_none}
@@ -136,7 +137,8 @@ init(Socket, Options) ->
     Access = proplists:get_value(access, Options, []),
     RH = proplists:get_value(request_handler, Options, undefined),
     PrivateKey = proplists:get_value(private_key, Options, ""),
-    {ok, #state{access = Access, private_key=PrivateKey, request_handler = RH}}.
+    NeighbourWorkers = proplists:get_value(neighbour_workers, Options, undefined),
+    {ok, #state{access = Access, private_key=PrivateKey, request_handler = RH, neighbour_workers = NeighbourWorkers}}.
 
 %% To avoid a compiler warning. Should we actually support something here?
 %%-----------------------------------------------------------------------------
@@ -270,17 +272,17 @@ handle_request(Socket, R, State) ->
 	    {stop, Error, State}
     end.
 
-handle_auth(_Socket, _Request, _Body, State) 
+handle_auth(_Socket, _Request, _Body, State)
   when State#state.authorized ->
     ok;
-handle_auth(_Socket, _Request, _Body, State=#state {access = []}) 
+handle_auth(_Socket, _Request, _Body, State=#state {access = []})
   when not State#state.authorized ->
     %% No access specied, all is allowed.
     ok;
-handle_auth(Socket, Request, Body, State=#state {access = Access})  
+handle_auth(Socket, Request, Body, State=#state {access = Access})
   when not State#state.authorized ->
-    rester_lib:handle_access(Access, Socket,  
-			  {?MODULE, handle_creds, 
+    rester_lib:handle_access(Access, Socket,
+			  {?MODULE, handle_creds,
 			   [Socket, Request, Body, State]}).
 
 
@@ -298,7 +300,7 @@ handle_creds(Creds, Socket, Request, Body, State) ->
 				       Cred, State);
 	[] -> ok
     end.
-    
+
 handle_basic_auth(_Socket, _Request, _Body, {basic,AuthParams},
 		  _Cred={basic,_Path,User,Password,Realm}, State) ->
     AuthUser =  proplists:get_value(<<"user">>, AuthParams),
@@ -406,7 +408,7 @@ unq_([]) -> [].
 handle_body(Socket, Request, Body, State) ->
     RH = State#state.request_handler,
     ?log_debug("calling ~p with -BODY:\n~s\n-END-BODY", [RH, Body]),
-    {M, F, As} = request_handler(RH, Socket, Request, Body),
+    {M, F, As} = request_handler(RH, Socket, Request, Body, State),
     try apply(M, F, As) of
 	ok -> {ok, State};
 	stop -> {stop, normal, State};
@@ -418,13 +420,16 @@ handle_body(Socket, Request, Body, State) ->
     end.
 
 %% @private
-request_handler(undefined, Socket, Request, Body) ->
+request_handler(undefined, Socket, Request, Body, _State) ->
     {?MODULE, handle_http_request, [Socket, Request, Body]};
-request_handler(Module, Socket, Request, Body) when is_atom(Module) ->
+request_handler(Module, Socket, Request, Body, _State) when is_atom(Module) ->
     {Module, handle_http_request, [Socket, Request, Body]};
-request_handler({Module, Function}, Socket, Request, Body) ->
+request_handler({Module, Function}, Socket, Request, Body, _State) ->
     {Module, Function, [Socket, Request, Body]};
-request_handler({Module, Function, XArgs}, Socket, Request, Body) ->
+request_handler({Module, Function, XArgs}, Socket, Request, Body, State)
+  when is_list(XArgs) ->
+    {Module, Function, [Socket, Request, Body, [{neighbour_workers, State#state.neighbour_workers}|XArgs]]};
+request_handler({Module, Function, XArgs}, Socket, Request, Body, State) ->
     {Module, Function, [Socket, Request, Body, XArgs]}.
 
 %%-----------------------------------------------------------------------------

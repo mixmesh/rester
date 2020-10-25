@@ -16,11 +16,11 @@
 -export([reusable_sessions/1]).
 
 %% gen_server callbacks
--export([init/1, 
-	 handle_call/3, 
-	 handle_cast/2, 
+-export([init/1,
+	 handle_call/3,
+	 handle_cast/2,
 	 handle_info/2,
-	 terminate/2, 
+	 terminate/2,
 	 code_change/3]).
 
 -export([behaviour_info/1]).
@@ -31,7 +31,7 @@
 %% -define(debug(Fmt,Args), ok).
 %% -define(error(Fmt,Args), error_logger:format(Fmt, Args)).
 
--define(SERVER, ?MODULE). 
+-define(SERVER, ?MODULE).
 
 -record(state, {
 	  listen,    %% #rester_socket{}
@@ -40,7 +40,8 @@
 	  inet_ref,  %% prim_inet internal accept ref number
 	  resource,  %% rester_resource reference
 	  module,    %% session module
-	  args       %% session init args
+	  args,      %% session init args
+          neighbour_workers
 	 }).
 
 -record(reuse, {
@@ -89,20 +90,20 @@
 -spec behaviour_info(callbacks) -> list().
 behaviour_info(callbacks) ->
     [
-     {init,  2},  %% init(Socket::socket(), Args::[term()] 
+     {init,  2},  %% init(Socket::socket(), Args::[term()]
                   %%   -> {ok,state()} | {stop,reason(),state()}
-     {data,  3},  %% data(Socket::socket(), Data::io_list(), State::state()) 
+     {data,  3},  %% data(Socket::socket(), Data::io_list(), State::state())
                   %%   -> {ok,state()}|{close,state()}|{stop,reason(),state()}
      {close, 2},  %% close(Socket::socket(), State::state())
                   %%   -> {ok,state()}
      {error, 3},  %% error(Socket::socket(),Error::error(), State:state())
                   %%   -> {ok,state()} | {stop,reason(),state()}
-     {control, 4},%% control(Socket::socket(), Request::term(), 
+     {control, 4},%% control(Socket::socket(), Request::term(),
                   %%         From::term(), State:state())
                   %%   -> {reply, Reply::term(),state()} | {noreply, state()} |
                   %%      {ignore, state()} | {send, Bin::binary(), state()} |
                   %%      {data, Data::trem()} |{stop,reason(),state()}
-     {info,  3}   %% data(Socket::socket(), Data::io_list(), State::state()) 
+     {info,  3}   %% data(Socket::socket(), Data::io_list(), State::state())
                   %%   -> {ok,state()}|{close,state()}|{stop,reason(),state()}
     ];
 behaviour_info(_Other) ->
@@ -114,25 +115,25 @@ behaviour_info(_Other) ->
 %% @end
 %%--------------------------------------------------------------------
 start_link(Port, Protos, Options, Module, SessionOptions) ->
-    gen_server:start_link(?MODULE, 
+    gen_server:start_link(?MODULE,
 			  [Port,Protos,Options,Module,SessionOptions],
 			  []).
 
 start_link(ServerName, Protos, Port, Options, Module, SessionOptions) ->
-    gen_server:start_link(ServerName, 
-			  ?MODULE, 
-			  [Port,Protos,Options,Module,SessionOptions], 
+    gen_server:start_link(ServerName,
+			  ?MODULE,
+			  [Port,Protos,Options,Module,SessionOptions],
 			  []).
 
 start(Port, Protos, Options, Module, SessionOptions) ->
-    gen_server:start(?MODULE, 
-		     [Port,Protos,Options,Module,SessionOptions], 
+    gen_server:start(?MODULE,
+		     [Port,Protos,Options,Module,SessionOptions],
 		     []).
 
 start(ServerName, Protos, Port, Options, Module, SessionOptions) ->
-    gen_server:start(ServerName, 
-		     ?MODULE, 
-		     [Port,Protos,Options,Module,SessionOptions], 
+    gen_server:start(ServerName,
+		     ?MODULE,
+		     [Port,Protos,Options,Module,SessionOptions],
 		     []).
 
 %%--------------------------------------------------------------------
@@ -188,11 +189,11 @@ init([Port,Protos,Options,Module,SessionOptions] = _X) ->
 	    Resource = make_ref(),
 	    rester_resource:acquire_async(Resource, infinity),
 	    ?log_debug("~p: listening", [?MODULE]),
-	    {ok, #state{ listen = Listen, 
-			 active = Active, 
+	    {ok, #state{ listen = Listen,
+			 active = Active,
 			 socket_reuse = Reuse,
 			 resource = Resource,
-			 module = Module, 
+			 module = Module,
 			 args = SessionOptions
 		       }};
 	{error,Reason} ->
@@ -206,8 +207,8 @@ init([Port,Protos,Options,Module,SessionOptions] = _X) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec handle_call(Request::term(), 
-		  From::{pid(), Tag::term()}, 
+-spec handle_call(Request::term(),
+		  From::{pid(), Tag::term()},
 		  State::#state{}) ->
 			 {reply, Reply::term(), State::#state{}} |
 			 {noreply, State::#state{}} |
@@ -285,7 +286,7 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info({resource, ok, Resource}, 
+handle_info({resource, ok, Resource},
 	    State=#state {resource = Resource, listen = Listen}) ->
     NewAccept = rester_socket:async_accept(Listen),
     %% Create the socket_session process
@@ -298,13 +299,13 @@ handle_info({resource, error, Reason}, State) ->
     ?log_error("resource acquire failed, reason ~p",[Reason]),
     {stop, Reason, State};
 
-handle_info({inet_async, LSocket, Ref, {ok,Socket}} = _Msg, 
-	    State=#state {inet_ref = Ref, resource = Resource}) 
+handle_info({inet_async, LSocket, Ref, {ok,Socket}} = _Msg,
+	    State=#state {inet_ref = Ref, resource = Resource})
   when (State#state.listen)#rester_socket.socket =:= LSocket ->
     ?log_debug("<-- ~p~n", [_Msg]),
     Listen = State#state.listen,
-    Pid = proc_lib:spawn(fun() -> 
-				 create_socket_session(Listen, Socket, State) 
+    Pid = proc_lib:spawn(fun() ->
+				 create_socket_session(Listen, Socket, State)
 			 end),
     inet:tcp_controlling_process(Socket, Pid),
     %% Turn over control to socket session
@@ -316,7 +317,7 @@ handle_info({inet_async, LSocket, Ref, {ok,Socket}} = _Msg,
     {noreply, State#state {resource = NewResource}};
 
 %% handle {ok,Socket} on bad ref ?
-handle_info({inet_async, _LSocket, Ref, {error,Reason}} = _Msg, 
+handle_info({inet_async, _LSocket, Ref, {error,Reason}} = _Msg,
 	    State=#state {inet_ref = Ref}) ->
     ?log_debug("~p: ~p~n", [?MODULE, _Msg]),
     %% Resource already acquired
@@ -380,6 +381,8 @@ handle_info({'DOWN', _, process, Pid, _},
 	    R1 = R#reuse{sessions = Sessions1, session_pids = Pids1},
 	    {noreply, State#state{socket_reuse = R1}}
     end;
+handle_info({neighbour_workers, NeighbourWorkers}, State) ->
+    {noreply, State#state{neighbour_workers = NeighbourWorkers}};
 handle_info(_Info, State) ->
     ?log_debug("unknown info ~p.", [_Info]),
     {noreply, State}.
@@ -423,10 +426,10 @@ create_socket_session(Listen, Socket, State) ->
 	    case rester_socket:async_socket(Listen, Socket,
 					    ?RESTER_DEFAULT_ACCEPT_TIMEOUT) of
 		{ok, XSocket} ->
-		    {ok,XState0} = 
+		    {ok,XState0} =
 			rester_socket_session:init([XSocket,
-						 State#state.module,
-						 State#state.args]),
+                                                    State#state.module,
+                                                    [{neighbour_workers, State#state.neighbour_workers}|State#state.args]]),
 		    activate_session(State, XState0);
 		_Error ->
 		    ?log_debug("no socket session, "
@@ -489,4 +492,3 @@ send_reuse_message(Host, Port, Args, M, MyPort, XSocket, RUSt) ->
     ReuseMsg = rester_socket_session:encode_reuse(
 		 MyPort, ReuseOpts),
     rester_socket:send(XSocket, ReuseMsg).
-
