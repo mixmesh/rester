@@ -21,12 +21,6 @@ parse_body(Request, Body) ->
 parse_body(Request, Body, Options) ->
     ?dbg_log_fmt("body ~p", [Body]),
     case try_parse_body(Request, Body, Options) of
-	{ok, {struct, [{"data", Data}]}} ->
-            parse_data(Data);
-	{ok, {struct, List}} ->
-            List;
-	{ok, {array, List}} ->
-            List;
 	{ok, Data} ->
             parse_data(Data);
 	[{"data", Data}] ->

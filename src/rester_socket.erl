@@ -69,7 +69,7 @@ listen(Port, Protos=[tcp|_], Opts0) ->
 	    Error
     end.
 
-%% 
+%%
 %%
 %%
 connect(Host, Port) ->
@@ -93,7 +93,7 @@ connect(_Host, File, Protos=[tcp|_], Opts0, Timeout)
     TcpConnectOpts = [{active,false},{packet,0},{mode,binary}|TcpOpts1],
     case afunix:connect(File, TcpConnectOpts, Timeout) of
 	{ok, S} ->
-	    X = 
+	    X =
 		#rester_socket { mdata   = afunix,
 				mctl    = afunix,
 				protocol = Protos,
@@ -120,7 +120,7 @@ connect(Host, Port, Protos=[tcp|_], Opts0, Timeout) -> %% tcp socket
     TcpConnectOpts = [{active,false},{packet,0},{mode,binary}|TcpOpts1],
     case gen_tcp:connect(Host, Port, TcpConnectOpts, Timeout) of
 	{ok, S} ->
-	    X = 
+	    X =
 		#rester_socket { mdata   = gen_tcp,
 				mctl    = inet,
 				protocol = Protos,
@@ -145,11 +145,11 @@ connect_upgrade(X, Protos0, Timeout) ->
 	    {SSLOpts0,Opts1} = split_options(ssl_connect_opts(),Opts),
 	    {_,SSLOpts} = split_options([ssl_imp], SSLOpts0),
 	    ?log_debug("SSL upgrade, options = ~p", [SSLOpts]),
-	    ?log_debug("before ssl:connect opts=~p", 
+	    ?log_debug("before ssl:connect opts=~p",
 		 [getopts(X, [active,packet,mode])]),
 	    case ssl_connect(X#rester_socket.socket, SSLOpts, Timeout) of
 		{ok,S1} ->
-		    ?log_debug("ssl:connect opt=~p", 
+		    ?log_debug("ssl:connect opt=~p",
 			 [ssl:getopts(S1, [active,packet,mode])]),
 		    X1 = X#rester_socket { socket=S1,
 					  mdata = ssl,
@@ -163,19 +163,19 @@ connect_upgrade(X, Protos0, Timeout) ->
 	    end;
 	[http|Protos1] ->
 	    {_, Close,Error} = X#rester_socket.tags,
-	    X1 = X#rester_socket { packet = http, 
+	    X1 = X#rester_socket { packet = http,
 				  tags = {http, Close, Error }},
 	    connect_upgrade(X1, Protos1, Timeout);
 	[] ->
 	    setopts(X, [{mode,X#rester_socket.mode},
 			{packet,X#rester_socket.packet},
 			{active,X#rester_socket.active}]),
-	    ?log_debug("after upgrade opts=~p", 
+	    ?log_debug("after upgrade opts=~p",
 		 [getopts(X, [active,packet,mode])]),
 	    {ok,X}
     end.
-			       
-ssl_connect(Socket, Options, Timeout) ->    
+
+ssl_connect(Socket, Options, Timeout) ->
     case ssl:connect(Socket, Options, Timeout) of
 	{error, ssl_not_started} ->
 	    ssl:start(),
@@ -229,12 +229,12 @@ async_socket(Listen, Socket, Timeout)
 	    Error
     end.
 
-    
+
 accept(X) when is_record(X, rester_socket) ->
     accept_upgrade(X, X#rester_socket.protocol, infinity).
 
-accept(X, Timeout) when 
-      is_record(X, rester_socket), 
+accept(X, Timeout) when
+      is_record(X, rester_socket),
       (Timeout =:= infnity orelse (is_integer(Timeout) andalso Timeout >= 0)) ->
     accept_upgrade(X, X#rester_socket.protocol, Timeout).
 
@@ -254,11 +254,11 @@ accept_upgrade(X=#rester_socket { mdata = M }, Protos0, Timeout) ->
 	    {SSLOpts0,Opts1} = split_options(ssl_listen_opts(),Opts),
 	    {_,SSLOpts} = split_options([ssl_imp], SSLOpts0),
 	    ?log_debug("SSL upgrade, options = ~p", [SSLOpts]),
-	    ?log_debug("before ssl_accept opt=~p", 
+	    ?log_debug("before ssl_accept opt=~p",
 		 [getopts(X, [active,packet,mode])]),
-	    case ssl_accept(X#rester_socket.socket, SSLOpts, Timeout) of
+	    case ssl:ssl_accept(X#rester_socket.socket, SSLOpts, Timeout) of
 		{ok,S1} ->
-		    ?log_debug("ssl_accept opt=~p", 
+		    ?log_debug("ssl_accept opt=~p",
 			 [ssl:getopts(S1, [active,packet,mode])]),
 		    X1 = X#rester_socket{socket=S1,
 				      mdata = ssl,
@@ -267,7 +267,7 @@ accept_upgrade(X=#rester_socket { mdata = M }, Protos0, Timeout) ->
 				      tags={ssl,ssl_closed,ssl_error}},
 		    accept_upgrade(X1, Protos1, Timeout);
 		Error={error,_Reason} ->
-		    ?log_warning("ssl:ssl_accept error=~p\n", 
+		    ?log_warning("ssl:ssl_accept error=~p\n",
 			 [_Reason]),
 		    Error
 	    end;
@@ -275,14 +275,14 @@ accept_upgrade(X=#rester_socket { mdata = M }, Protos0, Timeout) ->
 	    accept_probe_ssl(X,Protos1,Timeout);
 	[http|Protos1] ->
 	    {_, Close,Error} = X#rester_socket.tags,
-	    X1 = X#rester_socket { packet = http, 
+	    X1 = X#rester_socket { packet = http,
 				tags = {http, Close, Error }},
 	    accept_upgrade(X1,Protos1,Timeout);
 	[] ->
 	    setopts(X, [{mode,X#rester_socket.mode},
 			{packet,X#rester_socket.packet},
 			{active,X#rester_socket.active}]),
-	    ?log_debug("after upgrade opts=~p", 
+	    ?log_debug("after upgrade opts=~p",
 		 [getopts(X, [active,packet,mode])]),
 	    {ok,X}
     end.
@@ -320,16 +320,6 @@ accept_probe_ssl(X=#rester_socket { mdata=M, socket=S,
 	    Error
     end.
 
-ssl_accept(Socket, Options, Timeout) ->    
-    case ssl:ssl_accept(Socket, Options, Timeout) of
-	{error, ssl_not_started} ->
-	    ssl:start(),
-	    ssl:ssl_accept(Socket, Options, Timeout);
-	Result ->
-	    Result
-    end.
-
-
 request_type(<<"GET", _/binary>>) ->    http;
 request_type(<<"POST", _/binary>>) ->    http;
 request_type(<<"OPTIONS", _/binary>>) ->  http;
@@ -344,7 +334,7 @@ request_type(<<ContentType:8, _Version:16, _Length:16, _/binary>>) ->
     end;
 request_type(_) ->
     undefined.
-    
+
 %%
 %% rester_socket wrapper for socket operations
 %%
@@ -353,7 +343,7 @@ close(#rester_socket { mdata = M, socket = S}) ->
 
 shutdown(#rester_socket { mdata = M, socket = S}, How) ->
     M:shutdown(S, How).
-    
+
 send(#rester_socket { mdata = M,socket = S } = X, Data) ->
     try M:send(S, Data)
     catch
@@ -441,11 +431,11 @@ tcp_connect_options() ->
 
 
 ssl_listen_opts() ->
-    [versions, verify, verify_fun, 
+    [versions, verify, verify_fun,
      fail_if_no_peer_cert, verify_client_once,
-     depth, cert, certfile, key, keyfile, 
+     depth, cert, certfile, key, keyfile,
      password, cacerts, cacertfile, dh, dhfile, cihpers,
-     %% deprecated soon 
+     %% deprecated soon
      ssl_imp,   %% always new!
      %% server
      verify_client_once,
@@ -454,9 +444,9 @@ ssl_listen_opts() ->
      debug, hibernate_after, erl_dist ].
 
 ssl_connect_opts() ->
-    [versions, verify, verify_fun, 
+    [versions, verify, verify_fun,
      fail_if_no_peer_cert,
-     depth, cert, certfile, key, keyfile, 
+     depth, cert, certfile, key, keyfile,
      password, cacerts, cacertfile, dh, dhfile, cihpers,
      debug].
 

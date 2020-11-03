@@ -460,19 +460,13 @@ start_connector(Host, Port, ConnArgs, Parent,
 		    {ok, XSocket} ->
 			send_reuse_message(
 			  Host, Port, Args, M, MyPort, XSocket, RUSt),
-			case rester_socket_session:init(
-			       [XSocket, M, Args]) of
-			    {ok, XSt} ->
-				{noreply, XSt1} =
-				    rester_socket_session:handle_cast(
-				      {activate, Active}, XSt),
-				Parent ! {self(), ?MODULE, connected,
-					  Host, Port},
-				gen_server:enter_loop(
-				  rester_socket_session, [], XSt1);
-			    {error, InitError} ->
-				exit({InitError, [{rester_socket_session,init}]})
-			end;
+			{ok, XSt} = rester_socket_session:init(
+                                      [XSocket, M, Args]),
+                        {noreply, XSt1} =
+                            rester_socket_session:handle_cast(
+                              {activate, Active}, XSt),
+                        Parent ! {self(), ?MODULE, connected, Host, Port},
+                        gen_server:enter_loop(rester_socket_session, [], XSt1);
 		    {error, ConnectError} ->
 			exit({ConnectError, [{rester_socket, connect}]})
 		end
