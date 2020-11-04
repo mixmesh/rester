@@ -516,7 +516,13 @@ response(S, Connection, Status, Phrase, Body, Opts) ->
 
 response_r(S, Request, Status, Phrase, Body, Opts) ->
     {Version, Opts0} = opt_take(version, Opts, ?SERVER_HTTP_VSN),
-    {Content_type, Opts1} = opt_take(content_type, Opts0, "text/plain"),
+    {Content_type0, Opts1} = opt_take(content_type, Opts0, "text/plain"),    
+    case Content_type0 of
+        {url, Url} ->
+            Content_type = mime_type(Url, "application/octet-stream");
+        _ ->
+            Content_type = Content_type0
+    end,
     {Set_cookie, Opts2} = opt_take(set_cookie, Opts1, undefined),
     {Transfer_encoding,Opts3} =
 	if Request#http_request.version > {1,0} ->
@@ -542,7 +548,6 @@ response_r(S, Request, Status, Phrase, Body, Opts) ->
 		     true ->
 			  Connection
 		  end,
-
     H = #http_shdr { connection = Connection1,
 		     content_length = ContentLength,
 		     content_type = Content_type,
@@ -550,7 +555,6 @@ response_r(S, Request, Status, Phrase, Body, Opts) ->
 		     transfer_encoding = Transfer_encoding,
 		     location = Location,
 		     other = Opts5 },
-
     R = #http_response { version = Version,
 			 status = Status,
 			 phrase = Phrase,
@@ -559,15 +563,47 @@ response_r(S, Request, Status, Phrase, Body, Opts) ->
 		?CRNL,
 		rester_http:format_hdr(H),
 		?CRNL,
-		Body],
+		case Body of
+                    {file, _Filename} ->
+                        [];
+                    _ ->
+                        Body
+                end],
     ?log_debug("response:\n~s", [Response]),
     rester_socket:send(S, Response),
+    case Body of
+        {file, Filename} ->
+            {ok, _} = file:sendfile(Filename, S#rester_socket.socket);
+        _ ->
+            ok
+    end,
     if Connection1 =:= "close" ->
 	    stop;
        true ->
 	    ok
     end.
 
+mime_type(Url, DefaultMimeType) ->
+    case mime_type(string:lowercase(filename:extension(Url))) of
+        not_found ->
+            DefaultMimeType;
+        MimeType ->
+            MimeType
+    end.
+
+%% This is an inferior solution
+mime_type(".html") -> "text/html";
+mime_type(".css") -> "text/css";
+mime_type(".js") -> "application/javascript";
+mime_type(".gif") -> "image/gif";
+mime_type(".png") -> "image/png";
+mime_type(".jpg") -> "image/jpeg";
+mime_type(".svg") -> "image/svg+xml";
+mime_type(".ico") -> "image/x-icon";
+mime_type(_) -> not_found.
+
+content_length({file, Filename}) ->
+    filelib:file_size(Filename);
 content_length(B) when is_binary(B) ->
     byte_size(B);
 content_length(L) when is_list(L) ->
