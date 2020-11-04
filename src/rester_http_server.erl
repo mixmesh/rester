@@ -573,7 +573,7 @@ response_r(S, Request, Status, Phrase, Body, Opts) ->
     rester_socket:send(S, Response),
     case Body of
         {file, Filename} ->
-            {ok, _} = file:sendfile(Filename, S#rester_socket.socket);
+            file:sendfile(Filename, S#rester_socket.socket);
         _ ->
             ok
     end,
@@ -600,6 +600,7 @@ mime_type(".png") -> "image/png";
 mime_type(".jpg") -> "image/jpeg";
 mime_type(".svg") -> "image/svg+xml";
 mime_type(".ico") -> "image/x-icon";
+mime_type(".webmanifest") -> "application/manifest+json";
 mime_type(_) -> not_found.
 
 content_length({file, Filename}) ->
