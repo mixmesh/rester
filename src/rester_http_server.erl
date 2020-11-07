@@ -91,7 +91,7 @@ do_start(Start, Port, Options) ->
     {SessionOptions,Options1} =
 	rester_lib:split_options([request_handler,access,private_key,idle_timeout],
 			      Options),
-    Dir = code:priv_dir(rester),
+    %%Dir = code:priv_dir(rester),
     Access = proplists:get_value(access, Options, []),
     case rester_lib:validate_access(Access) of
 	ok ->
@@ -243,7 +243,7 @@ handle_request(Socket, R, State) ->
 	   ?CRNL]]),
     case rester_http:recv_body(Socket, R) of
 	{ok, Body} ->
-	    ?log_debug("body = ~s", [Body]),
+	    ?log_debug("body = ~p", [Body]),
 	    case handle_auth(Socket, R, Body, State) of
 		ok ->
 		    handle_body(Socket, R, Body, State);
@@ -282,9 +282,8 @@ handle_auth(_Socket, _Request, _Body, State=#state {access = []})
 handle_auth(Socket, Request, Body, State=#state {access = Access})
   when not State#state.authorized ->
     rester_lib:handle_access(Access, Socket,
-			  {?MODULE, handle_creds,
-			   [Socket, Request, Body, State]}).
-
+                             {?MODULE, handle_creds,
+                              [Socket, Request, Body, State]}).
 
 handle_creds(Creds, Socket, Request, Body, State) ->
     Header = Request#http_request.headers,
@@ -407,7 +406,7 @@ unq_([]) -> [].
 
 handle_body(Socket, Request, Body, State) ->
     RH = State#state.request_handler,
-    ?log_debug("calling ~p with -BODY:\n~s\n-END-BODY", [RH, Body]),
+    ?log_debug("calling ~p with -BODY:\n~p\n-END-BODY", [RH, Body]),
     {M, F, As} = request_handler(RH, Socket, Request, Body, State),
     try apply(M, F, As) of
 	ok -> {ok, State};

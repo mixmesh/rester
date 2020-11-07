@@ -582,15 +582,26 @@ recv_body(S, Request, Fun, Acc, Timeout)
 					      Timeout)
 		    end;
 		{1,1} ->
-		    case H#http_chdr.content_length of
-			undefined ->
-			    case H#http_chdr.transfer_encoding of
-				undefined -> recv_body_eof(S,Fun,Acc,Timeout);
-				"chunked" -> recv_body_chunks(S,Fun,Acc,Timeout)
-			    end;
-			Len -> recv_body_data(S,list_to_integer(Len),Fun,Acc,
-					      Timeout)
-		    end
+                    case H#http_chdr.content_type of
+                        "multipart/form-data; boundary=" ++ Boundary ->
+                            recv_multipart_form_data(
+                              S, Timeout, list_to_binary(Boundary));
+                        _ ->
+                            case H#http_chdr.content_length of
+                                undefined ->
+                                    case H#http_chdr.transfer_encoding of
+                                        undefined ->
+                                            recv_body_eof(S, Fun, Acc, Timeout);
+                                        "chunked" ->
+                                            recv_body_chunks(
+                                              S, Fun, Acc, Timeout)
+                                    end;
+                                Len ->
+                                    recv_body_data(
+                                      S, list_to_integer(Len), Fun, Acc,
+                                      Timeout)
+                            end
+                    end
 	    end;
        %% FIXME: handle GET/XXX with body
        true ->
@@ -719,7 +730,6 @@ recv_body_chunk(S, Fun, Acc, Timeout) ->
 	    Error
     end.
 
-
 recv_chunk_trailer(S, Acc, Timeout) ->
     case rester_socket:recv(S, 0, Timeout) of
 	{ok,{http_header,_,K,_,V}} ->
@@ -728,6 +738,115 @@ recv_chunk_trailer(S, Acc, Timeout) ->
 	    {ok, lists:reverse(Acc)};
 	Error ->
 	    Error
+    end.
+
+%% See: https://tools.ietf.org/html/rfc7578
+
+%% "-----------------------------153796634513348781802793578094\r\nContent-Disposition: form-data; name=\"files[]\"; filename=\"FOO.txt\"\r\nContent-Type: text/plain\r\n\r\nBAR\n\r\n-----------------------------153796634513348781802793578094--\r\n"
+
+recv_multipart_form_data(Socket, Timeout, Boundary)->
+    rester_socket:setopts(Socket, [{packet, raw}, {mode, binary}]),
+    Separator = list_to_binary([<<"--">>, Boundary, <<"\r\n">>]),
+    EndSeparator = list_to_binary([<<"--">>, Boundary, <<"--\r\n">>]),
+    recv_multipart_form_data(Socket, Timeout, Separator, EndSeparator, <<>>, []).
+
+recv_multipart_form_data(
+  Socket, Timeout, Separator, EndSeparator, Buffer, Acc) ->
+    SeparatorSize = size(Separator),
+    BufferSize = size(Buffer),
+    case binary:split(Buffer, Separator) of
+        [<<>>, RemainingBuffer] ->
+            case recv_multipart_headers(Socket, Timeout, RemainingBuffer, []) of
+                {ok, Headers, StillRemainingBuffer} ->
+                    Filename =
+                        filename:join(
+                          ["/tmp", "form-data-" ++
+                               integer_to_list(
+                                 erlang:unique_integer([positive]))]),
+                    {ok, File} = file:open(Filename, [write, binary]),
+                    case recv_multipart_body(
+                           Socket, Timeout, Separator, EndSeparator,
+                           StillRemainingBuffer, File) of
+                        {separator, TrailingBuffer} ->
+                            file:close(File),
+                            recv_multipart_form_data(
+                              Socket, Timeout, Separator, EndSeparator,
+                              TrailingBuffer, [{file, Headers, Filename}|Acc]);
+                        end_separator ->
+                            file:close(File),
+                            rester_socket:setopts(
+                              Socket, [{packet, http}, {mode, binary}]),
+                            {ok, {multipart_form_data,
+                                  [{file, Headers, Filename}|Acc]}};
+                        {error, Reason} ->
+                            file:close(File),
+                            rester_socket:close(Socket),
+                            {error, {bad_body, Reason}}
+                    end;
+                {error, Reason} ->
+                    {error, {bad_header, Reason}}
+            end;
+        [_] when BufferSize < SeparatorSize ->
+            case rester_socket:recv(Socket, 0, Timeout) of
+                {ok, Data} ->
+                    NewBuffer = list_to_binary([Buffer, Data]),
+                    recv_multipart_form_data(
+                      Socket, Timeout, Separator, EndSeparator, NewBuffer, Acc);
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        [_] ->
+            {error, bad_format}
+    end.
+
+%% "-----------------------------153796634513348781802793578094\r\nContent-Disposition: form-data; name=\"files[]\"; filename=\"FOO.txt\"\r\nContent-Type: text/plain\r\n\r\nBAR\n\r\n-----------------------------153796634513348781802793578094--\r\n"
+
+recv_multipart_headers(
+  _Socket, _Timeout, <<"\r\n", RemainingBuffer/binary>>, Headers) ->
+    {ok, Headers, RemainingBuffer};
+recv_multipart_headers(Socket, Timeout, Buffer, Headers) ->
+    case binary:split(Buffer, <<"\r\n">>) of
+        [Header, RemainingBuffer] ->
+            case binary:split(Header, <<": ">>) of
+                [Name, Value] ->
+                    recv_multipart_headers(
+                      Socket, Timeout, RemainingBuffer, [{Name, Value}|Headers]);
+                _ ->
+                    {error, invalid_name_value}
+            end;
+        _ ->
+            case rester_socket:recv(Socket, 0, Timeout) of
+                {ok, Data} ->
+                    NewBuffer = list_to_binary([Buffer, Data]),
+                    recv_multipart_headers(Socket, Timeout, NewBuffer, Headers);
+                {error, Reason} ->
+                    {error, Reason}
+            end
+    end.
+
+%% "-----------------------------153796634513348781802793578094\r\nContent-Disposition: form-data; name=\"files[]\"; filename=\"FOO.txt\"\r\nContent-Type: text/plain\r\n\r\nBAR\n\r\n-----------------------------153796634513348781802793578094--\r\n"
+
+recv_multipart_body(Socket, Timeout, Separator, EndSeparator, Buffer, File) ->
+    case binary:split(Buffer, Separator) of
+        [Data, RemainingBuffer] ->
+            file:write(File, Data),
+            {separator, list_to_binary([Separator, RemainingBuffer])};
+        [_] ->
+            case binary:split(Buffer, EndSeparator) of
+                [Data, <<>>] ->
+                    file:write(File, Data),
+                    end_separator;
+                [_] ->
+                    case rester_socket:recv(Socket, 0, Timeout) of
+                        {ok, Data} ->
+                            NewBuffer = list_to_binary([Buffer, Data]),
+                            recv_multipart_body(
+                              Socket, Timeout, Separator, EndSeparator,
+                              NewBuffer, File);
+                        {error, Reason} ->
+                            {error, Reason}
+                    end
+            end
     end.
 
 recv_headers(S, R) ->
@@ -739,7 +858,6 @@ recv_headers(S, R, Timeout) ->
        is_record(R, http_response) ->
 	    recv_hs(S, R, #http_shdr { },Timeout)
     end.
-
 
 recv_hc(S, R, H, Timeout) ->
     case rester_socket:recv(S, 0, Timeout) of
@@ -797,7 +915,6 @@ recv_hs(S, R, H, Timeout) ->
 	    recv_hs(S, R, H, Timeout);
 	Error -> Error
     end.
-
 
 make_request(Method, Url, Version, Hs) ->
     U = rester_url:parse(Url, sloppy),

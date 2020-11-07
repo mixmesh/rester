@@ -58,8 +58,10 @@ parse_data(Request, Body, Options) ->
 	    parse_json_string(Body, Options);
 	"application/x-www-form-urlencoded" ->
 	    rester_http:parse_query(Body);
-	_Type ->
-	    ?dbg_log_fmt("type: ~p~n", [_Type]),
+        "multipart/form-data; boundary=" ++ _ ->
+            Body;
+        Type ->
+	    ?dbg_log_fmt("type: ~p~n", [Type]),
 	    {error, "Unknown content type"}
     end.
 
