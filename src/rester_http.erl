@@ -758,30 +758,50 @@ recv_multipart_form_data(
         [<<>>, RemainingBuffer] ->
             case recv_multipart_headers(Socket, Timeout, RemainingBuffer, []) of
                 {ok, Headers, StillRemainingBuffer} ->
-                    Filename =
-                        filename:join(
-                          ["/tmp", "form-data-" ++
-                               integer_to_list(
-                                 erlang:unique_integer([positive]))]),
-                    {ok, File} = file:open(Filename, [write, binary]),
-                    case recv_multipart_body(
-                           Socket, Timeout, Separator, EndSeparator,
-                           StillRemainingBuffer, File) of
-                        {separator, TrailingBuffer} ->
-                            file:close(File),
-                            recv_multipart_form_data(
-                              Socket, Timeout, Separator, EndSeparator,
-                              TrailingBuffer, [{file, Headers, Filename}|Acc]);
-                        end_separator ->
-                            file:close(File),
-                            rester_socket:setopts(
-                              Socket, [{packet, http}, {mode, binary}]),
-                            {ok, {multipart_form_data,
-                                  [{file, Headers, Filename}|Acc]}};
-                        {error, Reason} ->
-                            file:close(File),
-                            rester_socket:close(Socket),
-                            {error, {bad_body, Reason}}
+                    case lists:keysearch(<<"Content-Type">>, 1, Headers) of
+                        {value, {_, <<"application/octet-stream">>}} ->
+                            Filename =
+                                filename:join(
+                                  ["/tmp", "form-data-" ++
+                                       integer_to_list(
+                                         erlang:unique_integer([positive]))]),
+                            {ok, File} = file:open(Filename, [write, binary]),
+                            case recv_multipart_body(
+                                   Socket, Timeout, Separator, EndSeparator,
+                                   StillRemainingBuffer, File) of
+                                {separator, TrailingBuffer} ->
+                                    file:close(File),
+                                    recv_multipart_form_data(
+                                      Socket, Timeout, Separator, EndSeparator,
+                                      TrailingBuffer, [{file, Headers, Filename}|Acc]);
+                                end_separator ->
+                                    file:close(File),
+                                    rester_socket:setopts(
+                                      Socket, [{packet, http}, {mode, binary}]),
+                                    {ok, {multipart_form_data,
+                                          [{file, Headers, Filename}|Acc]}};
+                                {error, Reason} ->
+                                    file:close(File),
+                                    rester_socket:close(Socket),
+                                    {error, {bad_body, Reason}}
+                            end;
+                        false ->
+                            case recv_multipart_body_data(
+                                   Socket, Timeout, Separator, EndSeparator,
+                                   StillRemainingBuffer) of
+                                {separator, Data, TrailingBuffer} ->
+                                    recv_multipart_form_data(
+                                      Socket, Timeout, Separator, EndSeparator,
+                                      TrailingBuffer, [{data, Headers, Data}|Acc]);
+                                {end_separator, Data} ->
+                                    rester_socket:setopts(
+                                      Socket, [{packet, http}, {mode, binary}]),
+                                    {ok, {multipart_form_data,
+                                          [{data, Headers, Data}|Acc]}};
+                                {error, Reason} ->
+                                    rester_socket:close(Socket),
+                                    {error, {bad_body, Reason}}
+                            end
                     end;
                 {error, Reason} ->
                     {error, {bad_header, Reason}}
@@ -843,6 +863,27 @@ recv_multipart_body(Socket, Timeout, Separator, EndSeparator, Buffer, File) ->
                             recv_multipart_body(
                               Socket, Timeout, Separator, EndSeparator,
                               NewBuffer, File);
+                        {error, Reason} ->
+                            {error, Reason}
+                    end
+            end
+    end.
+
+recv_multipart_body_data(Socket, Timeout, Separator, EndSeparator, Buffer) ->
+    case binary:split(Buffer, Separator) of
+        [Data, RemainingBuffer] ->
+            {separator, Data, list_to_binary([Separator, RemainingBuffer])};
+        [_] ->
+            case binary:split(Buffer, EndSeparator) of
+                [Data, <<>>] ->
+                    {end_separator, Data};
+                [_] ->
+                    case rester_socket:recv(Socket, 0, Timeout) of
+                        {ok, Data} ->
+                            NewBuffer = list_to_binary([Buffer, Data]),
+                            recv_multipart_body_data(
+                              Socket, Timeout, Separator, EndSeparator,
+                              NewBuffer);
                         {error, Reason} ->
                             {error, Reason}
                     end
