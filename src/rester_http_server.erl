@@ -24,6 +24,8 @@
 
 -define(Q, $\").
 
+-define(SEND_FILE_SEND_SIZE, 8192).
+
 -record(state,
 	{
 	  request,
@@ -352,7 +354,7 @@ now64() ->
 	erlang:system_time(milli_seconds)
     catch
 	error:undef ->
-	    {M,S,Us} = erlang:now(),
+	    {M,S,Us} = erlang:timestamp(),
 	    (M*1000000+S)*1000000+Us
     end.
 
@@ -428,7 +430,7 @@ request_handler({Module, Function}, Socket, Request, Body, _State) ->
 request_handler({Module, Function, XArgs}, Socket, Request, Body, State)
   when is_list(XArgs) ->
     {Module, Function, [Socket, Request, Body, [{neighbour_workers, State#state.neighbour_workers}|XArgs]]};
-request_handler({Module, Function, XArgs}, Socket, Request, Body, State) ->
+request_handler({Module, Function, XArgs}, Socket, Request, Body, _State) ->
     {Module, Function, [Socket, Request, Body, XArgs]}.
 
 %%-----------------------------------------------------------------------------
@@ -515,7 +517,7 @@ response(S, Connection, Status, Phrase, Body, Opts) ->
 
 response_r(S, Request, Status, Phrase, Body, Opts) ->
     {Version, Opts0} = opt_take(version, Opts, ?SERVER_HTTP_VSN),
-    {Content_type0, Opts1} = opt_take(content_type, Opts0, "text/plain"),    
+    {Content_type0, Opts1} = opt_take(content_type, Opts0, "text/plain"),
     case Content_type0 of
         {url, Url} ->
             Content_type = mime_type(Url, "application/octet-stream");
@@ -572,7 +574,7 @@ response_r(S, Request, Status, Phrase, Body, Opts) ->
     rester_socket:send(S, Response),
     case Body of
         {file, Filename} ->
-            file:sendfile(Filename, S#rester_socket.socket);
+            sendfile(Filename, S#rester_socket.socket);
         _ ->
             ok
     end,
@@ -580,6 +582,32 @@ response_r(S, Request, Status, Phrase, Body, Opts) ->
 	    stop;
        true ->
 	    ok
+    end.
+
+sendfile(Filename, Socket) when is_port(Socket) ->
+    file:sendfile(Filename, Socket);
+%% https://bugs.erlang.org/projects/ERL/issues/ERL-1293
+sendfile(Filename, Socket) ->
+    case file:open(Filename, [read, binary]) of
+        {error, Reason} ->
+            {error, Reason};
+        {ok, File} ->
+            _ = senddata(Socket, File),
+            file:close(Socket)
+    end.
+
+senddata(Socket, File) ->
+    case file:read(File, ?SEND_FILE_SEND_SIZE) of
+        {ok, Data} ->
+            rester_socket:send(Data),
+            case size(Data) < ?SEND_FILE_SEND_SIZE of
+                true ->
+                    ok;
+                false ->
+                    senddata(Socket, File)
+            end;
+        _ ->
+            ok
     end.
 
 mime_type(Url, DefaultMimeType) ->
