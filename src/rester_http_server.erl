@@ -574,7 +574,7 @@ response_r(S, Request, Status, Phrase, Body, Opts) ->
     rester_socket:send(S, Response),
     case Body of
         {file, Filename} ->
-            sendfile(Filename, S#rester_socket.socket);
+            sendfile(Filename, S);
         _ ->
             ok
     end,
@@ -584,27 +584,28 @@ response_r(S, Request, Status, Phrase, Body, Opts) ->
 	    ok
     end.
 
-sendfile(Filename, Socket) when is_port(Socket) ->
+sendfile(Filename, #rester_socket{protocol = Protocol, socket = Socket})
+  when Protocol == tcp orelse Protocol == http ->
     file:sendfile(Filename, Socket);
 %% https://bugs.erlang.org/projects/ERL/issues/ERL-1293
-sendfile(Filename, Socket) ->
+sendfile(Filename, S) ->
     case file:open(Filename, [read, binary]) of
         {error, Reason} ->
             {error, Reason};
         {ok, File} ->
-            _ = senddata(Socket, File),
-            file:close(Socket)
+            _ = senddata(S, File),
+            file:close(File)
     end.
 
-senddata(Socket, File) ->
+senddata(S, File) ->
     case file:read(File, ?SEND_FILE_SEND_SIZE) of
-        {ok, Data} ->
-            rester_socket:send(Data),
-            case size(Data) < ?SEND_FILE_SEND_SIZE of
+        {ok, Chunk} ->
+            _ = rester_socket:send(S, Chunk),
+            case size(Chunk) < ?SEND_FILE_SEND_SIZE of
                 true ->
                     ok;
                 false ->
-                    senddata(Socket, File)
+                    senddata(S, File)
             end;
         _ ->
             ok
