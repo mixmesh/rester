@@ -20,6 +20,7 @@
 
 -export([port_limit/0]).
 -export([port_count/0]).
+-export([max_fds/0]).
 
 -define(SERVER, rester_resource_srv).
 -define(RESERVED_PORTS, 30). 
@@ -214,10 +215,19 @@ port_count() ->
     end.
 
 max_fds() ->
-    case proplists:get_value(max_fds, erlang:system_info(check_io)) of
+    case system_max_fds() of
 	I when is_integer(I) -> I;
 	undefined -> ulimit_fds()
     end.
+
+system_max_fds() ->
+    case erlang:system_info(check_io) of
+	[FirstPollSet|_] when is_list(FirstPollSet) ->
+	    proplists:get_value(max_fds,FirstPollSet);
+	PollSet=[{Key,_}|_] when is_atom(Key) ->
+	    proplists:get_value(max_fds,PollSet)
+    end.
+    
 
 ulimit_fds() ->
     case string:tokens(os:cmd("ulimit -n"), "\n") of

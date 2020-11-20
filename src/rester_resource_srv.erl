@@ -331,7 +331,7 @@ supervise({Pid, _Ref} = Resource, Resources) ->
 unsupervise(Resource, Resources) ->
     case dict:find(Resource, Resources) of
 	{ok, Mon} ->
-	    ?log_debug("demonitor resource ~p", [Resource]),
+	    ?log_debug("demonitor resource ~p", [Resource]),
 	    erlang:demonitor(Mon),
 	    dict:erase(Resource, dict:erase(Mon, Resources));
 	error ->
