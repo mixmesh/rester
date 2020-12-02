@@ -147,7 +147,6 @@ stop(Server) when is_atom(Server);
 		  is_pid(Server) ->
     gen_server:call(Server, stop).
 
-
 %%--------------------------------------------------------------------
 -spec reusable_sessions(Process::pid() | atom()) ->
 	   list({{IpAddress::tuple(), Port::integer}, Pid::pid}).
