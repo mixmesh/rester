@@ -1,8 +1,8 @@
 %% -*- erlang -*-
 {application, rester,
  [{description, "REST for erlang"},
-  {vsn, "%VSN%"},
-  {modules, [%MODULES%]},
+  {vsn, git},
+  {modules, ["@@MODULES@@"]},
   {env, []},
   {mod, {rester_app, []}},
   {applications,[kernel,stdlib,ssl]}
