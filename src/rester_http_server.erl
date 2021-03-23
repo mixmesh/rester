@@ -567,6 +567,8 @@ response_r(S, Request, Status, Phrase, Body, Opts) ->
 		case Body of
                     {file, _Filename} ->
                         [];
+                    {skip_body, _} ->
+                        [];
                     _ ->
                         Body
                 end],
@@ -633,6 +635,8 @@ mime_type(_) -> not_found.
 
 content_length({file, Filename}) ->
     filelib:file_size(Filename);
+content_length({skip_body, B}) ->
+    content_length(B);
 content_length(B) when is_binary(B) ->
     byte_size(B);
 content_length(L) when is_list(L) ->
