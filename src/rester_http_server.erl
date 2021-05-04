@@ -635,8 +635,8 @@ mime_type(_) -> not_found.
 
 content_length({file, Filename}) ->
     filelib:file_size(Filename);
-content_length({skip_body, B}) ->
-    content_length(B);
+content_length({skip_body, ContentLength}) ->
+    ContentLength;
 content_length(B) when is_binary(B) ->
     byte_size(B);
 content_length(L) when is_list(L) ->
@@ -648,7 +648,6 @@ opt_take(K, L, Def) ->
 	{value,{_,V},L1} -> {V,L1};
 	false -> {Def,L}
     end.
-
 
 %% @private
 handle_http_request(Socket, Request, Body) ->

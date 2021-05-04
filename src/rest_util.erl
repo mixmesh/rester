@@ -6,6 +6,7 @@
          if_modified_since/2]).
 
 -include_lib("apptools/include/log.hrl").
+-include_lib("apptools/include/shorthand.hrl").
 -include_lib("rester/include/rester.hrl").
 -include_lib("rester/include/rester_http.hrl").
 
@@ -101,9 +102,9 @@ parse_json_params(JsonTerm, Params) ->
 parse_json_params([], [], Acc) ->
     lists:reverse(Acc);
 parse_json_params([{Name, _Value}|_], [], _Acc) ->
-    throw({error, io_lib:format("~s not expected", [Name])});
+    throw({error, ?l2b(io_lib:format("~s not expected", [Name]))});
 parse_json_params(_JsonTerm, [], _Acc) ->
-    throw({error, "Invalid parameters"});
+    throw({error, <<"Invalid parameters">>});
 parse_json_params(JsonTerm, [{Name, CheckType}|Rest], Acc) ->
     case lists:keytake(Name, 1, JsonTerm) of
         {value, {_, Value}, RemainingJsonTerm} ->
@@ -111,10 +112,10 @@ parse_json_params(JsonTerm, [{Name, CheckType}|Rest], Acc) ->
                 true ->
                     parse_json_params(RemainingJsonTerm, Rest, [Value|Acc]);
                 false ->
-                    throw({error, io_lib:format("~s has bad type", [Name])})
+                    throw({error, ?l2b(io_lib:format("~s has bad type", [Name]))})
             end;
         false ->
-            throw({error, io_lib:format("~s is missing", [Name])})
+            throw({error, ?l2b(io_lib:format("~s is missing", [Name]))})
     end;
 parse_json_params(JsonTerm, [{Name, CheckType, DefaultValue}|Rest], Acc) ->
     case lists:keytake(Name, 1, JsonTerm) of
@@ -123,13 +124,13 @@ parse_json_params(JsonTerm, [{Name, CheckType, DefaultValue}|Rest], Acc) ->
                 true ->
                     parse_json_params(RemainingJsonTerm, Rest, [Value|Acc]);
                 false ->
-                    throw({error, io_lib:format("~s has bad type", [Name])})
+                    throw({error, ?l2b(io_lib:format("~s has bad type", [Name]))})
             end;
         false ->
             parse_json_params(JsonTerm, Rest, [DefaultValue|Acc])
     end;
 parse_json_params(_JsonTerm, _Params, _Acc) ->
-    throw({error, "Invalid parameters"}).
+    throw({error, <<"Invalid parameters">>}).
 
 %%%-------------------------------------------------------------------
 %% Check conditional headers (KEEP THEM!!!)
@@ -339,6 +340,8 @@ format_reply(Data,Request) ->
 	"text/plain" ->
 	    {"text/plain", format_reply_text(Data)};
 	"*/*" ->
+	    {"application/json", format_reply_json(Data)};
+        undefined ->
 	    {"application/json", format_reply_json(Data)}
     end.
 
