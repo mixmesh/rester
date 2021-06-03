@@ -12,7 +12,9 @@
 
 -define(LATEST_VSN, v1).
 
+%%
 %% Exported: parse_body
+%%
 
 parse_body(Request, Body) ->
     parse_body(Request, Body, []).
@@ -136,7 +138,9 @@ parse_json_params(_JsonTerm, _Params, _Acc) ->
 %% Check conditional headers (KEEP THEM!!!)
 %%%-------------------------------------------------------------------
 
+%%
 %% Exported: header_match
+%%
 
 -spec header_match(H::#http_chdr{}, ETag::string(), Lmt::calendar:datetime())
 		  -> true | precondition_failed | not_modified.
@@ -160,7 +164,9 @@ header_match(H, ETag, Lmt) ->
 	Status -> Status
     end.
 
+%%
 %% Exported: if_match
+%%
 
 if_match(undefined, _ETag) ->
     true;
@@ -174,7 +180,9 @@ if_match(IfMatch, ETag) ->
 	    end
     end.
 
+%%
 %% Exported: if_unmodified_since
+%%
 
 if_unmodified_since(undefined, _Lmt) ->
     true;
@@ -188,7 +196,9 @@ if_unmodified_since(IfUnModifiedSince, Lmt) ->
 	error:_ -> true
     end.
 
+%%
 %% Exported: if_none_match
+%%
 
 if_none_match(undefined, _ETag) ->
     true;
@@ -202,7 +212,9 @@ if_none_match(IfNoneMatch, ETag) ->
 	    end
     end.
 
+%%
 %% Exported: if_modified_since
+%%
 
 if_modified_since(undefined, _Lmt) ->
     true;
@@ -218,7 +230,9 @@ if_modified_since(IfModifiedSince, Lmt) ->
 	error:_ -> true
     end.
 
+%%
 %% Exported: response
+%%
 
 %%%-------------------------------------------------------------------
 %%% General response function
@@ -364,7 +378,9 @@ format_reply_text(Data) when is_list(Data) ->
 format_reply_text(Data) ->
     io_lib:format("~p", [Data]).
 
+%%
 %% Exported: access
+%%
 
 %%-spec access(Socket::#rester_socket{}) -> Access::access().
 
