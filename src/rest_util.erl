@@ -138,7 +138,7 @@ parse_json_params(_JsonTerm, _Params, _Acc) ->
 
 %% Exported: header_match
 
--spec header_match(H::#http_chdr{}, ETag::string(), Lmt::calendar:date_time())
+-spec header_match(H::#http_chdr{}, ETag::string(), Lmt::calendar:datetime())
 		  -> true | precondition_failed | not_modified.
 
 header_match(H, ETag, Lmt) ->
