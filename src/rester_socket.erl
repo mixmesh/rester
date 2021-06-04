@@ -256,7 +256,7 @@ accept_upgrade(X=#rester_socket { mdata = M }, Protos0, Timeout) ->
 	    ?log_debug("SSL upgrade, options = ~p", [SSLOpts]),
 	    ?log_debug("before ssl_accept opt=~p",
 		 [getopts(X, [active,packet,mode])]),
-	    case ssl:ssl_accept(X#rester_socket.socket, SSLOpts, Timeout) of
+	    case handshake(X#rester_socket.socket, SSLOpts, Timeout) of
 		{ok,S1} ->
 		    ?log_debug("ssl_accept opt=~p",
 			 [ssl:getopts(S1, [active,packet,mode])]),
@@ -267,7 +267,7 @@ accept_upgrade(X=#rester_socket { mdata = M }, Protos0, Timeout) ->
 				      tags={ssl,ssl_closed,ssl_error}},
 		    accept_upgrade(X1, Protos1, Timeout);
 		Error={error,_Reason} ->
-		    ?log_warning("ssl:ssl_accept error=~p\n",
+		    ?log_warning("ssl:handshake error=~p\n",
 			 [_Reason]),
 		    Error
 	    end;
@@ -466,3 +466,14 @@ split_options(Keys, [Key|KVs], List1, List2) ->
     end;
 split_options(_Keys, [], List1, List2) ->
     {lists:reverse(List1), lists:reverse(List2)}.
+
+%% allow older erlang versions
+handshake(Socket, Opts, Timeout) ->
+    try ssl:ssl_accept(Socket, Opts, Timeout) of
+	Result -> Result
+    catch
+	error:undef ->
+	    ssl:handshake(Socket, Opts, Timeout)
+    end.
+
+	    
