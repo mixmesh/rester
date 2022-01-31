@@ -87,6 +87,8 @@ parse_data(I) when is_integer(I) ->
     I;
 parse_data(F) when is_float(F) ->
     F;
+parse_data(M) when is_map(M) ->
+    M;
 parse_data(List) when is_list(List) ->
     try list_to_integer(List) of
 	I -> I
@@ -276,7 +278,7 @@ response(Socket,Request,{error, not_modified}) ->
 response(Socket,Request,{error, bad_request, ErrorMsg})
   when is_list(ErrorMsg) ->
     rester_http_server:response_r(Socket,Request,400,"Bad Request",
-			       ErrorMsg,[]);
+                                  ErrorMsg,[]);
 response(Socket,Request,{error, badarg}) ->
     rester_http_server:response_r(Socket,Request,400,"Bad Request",
 			       "Bad argument",[]);
