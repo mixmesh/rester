@@ -372,7 +372,8 @@ format_reply_json(Term) ->
                         {indent, 2},
                         {object_key_type, value},
                         {space, 1},
-                        native_forward_slash]).
+                        native_forward_slash,
+                        undefined_as_null]).
 
 -spec format_reply_text(Term::term()) ->
 	  TextReply::string().
