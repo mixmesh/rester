@@ -50,18 +50,18 @@ parse_data(Request, Body, Options) when is_binary(Body)->
 parse_data(Request, Body, Options) ->
     Type = (Request#http_request.headers)#http_chdr.content_type,
     ?dbg_log_fmt("type ~p, body ~p", [Type, Body]),
-    case Type of
-	"*/*" -> %% Accept?
+    case string:split(Type, ";") of
+	["*/*"|_] -> %% Accept?
 	    {ok,parse_data(Body)};
-	"text/plain" ->
+	["text/plain"|_] ->
 	    {ok,parse_data(Body)};
-	"application/json" ->
+	["application/json"|_] ->
 	    parse_json_string(Body, Options);
-	"application/x-www-form-urlencoded" ->
-	    rester_http:parse_query(Body);
-        "multipart/form-data; boundary=" ++ _ ->
-            Body;
-        Type ->
+	["application/x-www-form-urlencoded"|_] ->
+	    {ok,rester_http:parse_query(Body)};
+        ["multipart/form-data", "boundary="++ _, _] ->
+            {ok,Body};
+        _ ->
 	    ?dbg_log_fmt("type: ~p~n", [Type]),
 	    {error, "Unknown content type"}
     end.

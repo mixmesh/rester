@@ -72,6 +72,9 @@
 -export([make_digest_response/3]).
 
 -define(Q, $\").
+
+-define(MAX_RAW_CHUNK_SIZE, 4096).
+
 %%
 %% Perform a HTTP/1.1 GET
 %%
@@ -564,7 +567,14 @@ recv_body(S, R) ->
     recv_body(S, R, infinity).
 
 recv_body(S, R, Timeout) ->
-    recv_body(S, R, fun (Data, Acc) -> [Data|Acc] end, [], Timeout).
+    case recv_body(S, R, 
+		   fun (Data, Acc) -> [Data|Acc] end,
+		   [], Timeout) of
+	{ok, Chunks} ->
+	    {ok, reversed_chunks_to_binary(Chunks)};
+	Error ->
+	    Error
+    end.
 
 recv_body(S, Request, Fun, Acc, Timeout)
   when is_record(Request, http_request) ->
@@ -625,10 +635,13 @@ recv_body(S, Response, Fun, Acc, Timeout)
 	    case H#http_shdr.content_length of
 		undefined ->
 		    case H#http_shdr.transfer_encoding of
-			undefined -> recv_body_eof(S,Fun,Acc,Timeout);
-			"chunked" -> recv_body_chunks(S,Fun,Acc,Timeout)
+			undefined ->
+			    recv_body_eof(S,Fun,Acc,Timeout);
+			"chunked" ->
+			    recv_body_chunks(S,Fun,Acc,Timeout)
 		    end;
-		Len -> recv_body_data(S,list_to_integer(Len),Fun,Acc,Timeout)
+		Len -> 
+		    recv_body_data(S,list_to_integer(Len),Fun,Acc,Timeout)
 	    end
     end.
 
@@ -636,20 +649,27 @@ recv_body_eof(Socket) ->
     recv_body_eof(Socket,infinity).
 
 recv_body_eof(Socket,Timeout) ->
-    recv_body_eof(Socket,fun(Data,Acc) -> [Data|Acc] end, [], Timeout).
+    case recv_body_eof(Socket,
+		       fun(Data,Acc) -> [Data|Acc] end, 
+		       [], Timeout) of
+	{ok, Chunks} ->
+	    {ok,reversed_chunks_to_binary(Chunks)};
+	Error ->
+	    Error
+    end.
 
 recv_body_eof(Socket,Fun,Acc,Timeout) ->
     ?log_debug("RECV_BODY_EOF: tmo=~w", [Timeout]),
     rester_socket:setopts(Socket, [{packet,raw},{mode,binary}]),
-    recv_body_eof1(Socket,Fun,Acc,Timeout).
+    recv_body_eof_(Socket,Fun,Acc,Timeout).
 
-recv_body_eof1(Socket,Fun,Acc,Timeout) ->
+recv_body_eof_(Socket,Fun,Acc,Timeout) ->
     case rester_socket:recv(Socket, 0, Timeout) of
 	{ok, Bin} ->
 	    Acc1 = Fun(Bin, Acc),
-	    recv_body_eof1(Socket,Fun,Acc1,Timeout);
+	    recv_body_eof_(Socket,Fun,Acc1,Timeout);
 	{error, closed} ->
-	    {ok, list_to_binary(lists:reverse(Acc))};
+	    {ok, Acc};
 	Error ->
 	    Error
     end.
@@ -658,19 +678,33 @@ recv_body_data(Socket, Len) ->
     recv_body_data(Socket, Len, infinity).
 
 recv_body_data(Socket, Len, Timeout) ->
-    recv_body_data(Socket, Len, fun(Data,Acc) -> [Data|Acc] end, [], Timeout).
+    case recv_body_data(Socket, Len, 
+			fun(Data,Acc) -> [Data|Acc] end, 
+			[], Timeout) of
+	{ok, Chunks} ->
+	    {ok,reversed_chunks_to_binary(Chunks)};
+	Error ->
+	    Error
+    end.
 
-recv_body_data(_Socket, 0, _Fun, _Acc, _Timeout) ->
+%% read determined Content-Length content in chunks of ?MAX_RAW_CHUNK_SIZE
+recv_body_data(_Socket, 0, _Fun, Acc, _Timeout) ->
     ?log_debug("RECV_BODY_DATA: len=0, tmo=~w", [_Timeout]),
-    {ok, <<>>};
+    {ok, Acc};
 recv_body_data(Socket, Len, Fun, Acc, Timeout) ->
     ?log_debug("RECV_BODY_DATA: len=~p, tmo=~w", [Len,Timeout]),
     rester_socket:setopts(Socket, [{packet,raw},{mode,binary}]),
-    case rester_socket:recv(Socket, Len, Timeout) of
+    recv_body_data_(Socket, Len, Fun, Acc, Timeout).
+
+recv_body_data_(Socket, 0, _Fun, Acc, _Timeout) ->
+    rester_socket:setopts(Socket, [{packet,http}]),
+    {ok, Acc};
+recv_body_data_(Socket, Len, Fun, Acc, Timeout) ->
+    Len1 = min(Len, ?MAX_RAW_CHUNK_SIZE),
+    case rester_socket:recv(Socket, Len1, Timeout) of
 	{ok, Bin} ->
 	    Acc1 = Fun(Bin, Acc),
-	    rester_socket:setopts(Socket, [{packet,http}]),
-	    {ok,iolist_to_binary(lists:reverse(Acc1))};
+	    recv_body_data_(Socket, Len-Len1, Fun, Acc1, Timeout);
 	Error ->
 	    Error
     end.
@@ -680,7 +714,14 @@ recv_body_chunks(Socket) ->
     recv_body_chunks(Socket, infinity).
 
 recv_body_chunks(Socket, Timeout) ->
-    recv_body_chunks(Socket, fun(Chunk,Acc) -> [Chunk|Acc] end, [], Timeout).
+    case recv_body_chunks(Socket, 
+			  fun(Chunk,Acc) -> [Chunk|Acc] end,
+			  [], Timeout) of
+	{ok, Chunks} ->
+	    {ok, reversed_chunks_to_binary(Chunks)};
+	Error ->
+	    Error
+    end.
 
 recv_body_chunks(Socket, Fun, Acc, Timeout) ->
     rester_socket:setopts(Socket, [{packet,line},{mode,list}]),
@@ -700,7 +741,7 @@ recv_body_chunk(S, Fun, Acc, Timeout) ->
 			    ?log_debug("CHUNK TRAILER: ~p", [_TR]),
 			    rester_socket:setopts(S, [{packet,http},
 						   {mode,binary}]),
-			    {ok,list_to_binary(lists:reverse(Acc))};
+			    {ok,Acc};
 			Error ->
 			    Error
 		    end;
@@ -739,6 +780,12 @@ recv_chunk_trailer(S, Acc, Timeout) ->
 	Error ->
 	    Error
     end.
+
+reversed_chunks_to_binary(Bin) when is_binary(Bin) -> Bin;
+reversed_chunks_to_binary([Bin]) when is_binary(Bin) -> Bin;
+reversed_chunks_to_binary(Chunks) ->
+    iolist_to_binary(lists:reverse(Chunks)).
+
 
 %% See: https://tools.ietf.org/html/rfc7578
 
