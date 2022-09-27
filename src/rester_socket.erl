@@ -46,7 +46,7 @@ listen(Port, Protos=[tcp|_], Opts0) ->
     Opts1 = proplists:expand([{binary, [{mode, binary}]},
 			      {list, [{mode, list}]}], Opts0),
     {TcpOpts, Opts2} = split_options(tcp_listen_options(), Opts1),
-    ?log_debug("listen options=~p, other=~p", [TcpOpts, Opts2]),
+    ?debug("listen options=~p, other=~p", [TcpOpts, Opts2]),
     Active = proplists:get_value(active, TcpOpts, false),
     Mode   = proplists:get_value(mode, TcpOpts, list),
     Packet = proplists:get_value(packet, TcpOpts, 0),
@@ -138,18 +138,19 @@ connect(Host, Port, Protos=[tcp|_], Opts0, Timeout) -> %% tcp socket
     end.
 
 connect_upgrade(X, Protos0, Timeout) ->
-    ?log_debug("connect protos=~p", [Protos0]),
+    ?debug("connect protos=~p", [Protos0]),
     case Protos0 of
 	[ssl|Protos1] ->
-	    Opts = X#rester_socket.opts,
+	    Opts = X#rester_socket.opts ++ 
+		application:get_env(rester, ssl_options, []),
 	    {SSLOpts0,Opts1} = split_options(ssl_connect_opts(),Opts),
 	    {_,SSLOpts} = split_options([ssl_imp], SSLOpts0),
-	    ?log_debug("SSL upgrade, options = ~p", [SSLOpts]),
-	    ?log_debug("before ssl:connect opts=~p",
+	    ?debug("SSL upgrade, options = ~p", [SSLOpts]),
+	    ?debug("before ssl:connect opts=~p",
 		 [getopts(X, [active,packet,mode])]),
 	    case ssl_connect(X#rester_socket.socket, SSLOpts, Timeout) of
 		{ok,S1} ->
-		    ?log_debug("ssl:connect opt=~p",
+		    ?debug("ssl:connect opt=~p",
 			 [ssl:getopts(S1, [active,packet,mode])]),
 		    X1 = X#rester_socket { socket=S1,
 					  mdata = ssl,
@@ -158,7 +159,7 @@ connect_upgrade(X, Protos0, Timeout) ->
 					  tags={ssl,ssl_closed,ssl_error}},
 		    connect_upgrade(X1, Protos1, Timeout);
 		Error={error,_Reason} ->
-		    ?log_warning("ssl:connect error=~w\n", [_Reason]),
+		    ?warning("ssl:connect error=~w\n", [_Reason]),
 		    Error
 	    end;
 	[http|Protos1] ->
@@ -170,7 +171,7 @@ connect_upgrade(X, Protos0, Timeout) ->
 	    setopts(X, [{mode,X#rester_socket.mode},
 			{packet,X#rester_socket.packet},
 			{active,X#rester_socket.active}]),
-	    ?log_debug("after upgrade opts=~p",
+	    ?debug("after upgrade opts=~p",
 		 [getopts(X, [active,packet,mode])]),
 	    {ok,X}
     end.
@@ -239,7 +240,7 @@ accept(X, Timeout) when
     accept_upgrade(X, X#rester_socket.protocol, Timeout).
 
 accept_upgrade(X=#rester_socket { mdata = M }, Protos0, Timeout) ->
-    ?log_debug("accept protos=~p", [Protos0]),
+    ?debug("accept protos=~p", [Protos0]),
     case Protos0 of
 	[tcp|Protos1] ->
 	    case M:accept(X#rester_socket.socket, Timeout) of
@@ -253,12 +254,12 @@ accept_upgrade(X=#rester_socket { mdata = M }, Protos0, Timeout) ->
 	    Opts = X#rester_socket.opts,
 	    {SSLOpts0,Opts1} = split_options(ssl_listen_opts(),Opts),
 	    {_,SSLOpts} = split_options([ssl_imp], SSLOpts0),
-	    ?log_debug("SSL upgrade, options = ~p", [SSLOpts]),
-	    ?log_debug("before ssl_accept opt=~p",
+	    ?debug("SSL upgrade, options = ~p", [SSLOpts]),
+	    ?debug("before ssl_accept opt=~p",
 		 [getopts(X, [active,packet,mode])]),
 	    case handshake(X#rester_socket.socket, SSLOpts, Timeout) of
 		{ok,S1} ->
-		    ?log_debug("ssl_accept opt=~p",
+		    ?debug("ssl_accept opt=~p",
 			 [ssl:getopts(S1, [active,packet,mode])]),
 		    X1 = X#rester_socket{socket=S1,
 				      mdata = ssl,
@@ -267,7 +268,7 @@ accept_upgrade(X=#rester_socket { mdata = M }, Protos0, Timeout) ->
 				      tags={ssl,ssl_closed,ssl_error}},
 		    accept_upgrade(X1, Protos1, Timeout);
 		Error={error,_Reason} ->
-		    ?log_warning("ssl:handshake error=~p\n",
+		    ?warning("ssl:handshake error=~p\n",
 			 [_Reason]),
 		    Error
 	    end;
@@ -282,7 +283,7 @@ accept_upgrade(X=#rester_socket { mdata = M }, Protos0, Timeout) ->
 	    setopts(X, [{mode,X#rester_socket.mode},
 			{packet,X#rester_socket.packet},
 			{active,X#rester_socket.active}]),
-	    ?log_debug("after upgrade opts=~p",
+	    ?debug("after upgrade opts=~p",
 		 [getopts(X, [active,packet,mode])]),
 	    {ok,X}
     end.
@@ -291,32 +292,32 @@ accept_probe_ssl(X=#rester_socket { mdata=M, socket=S,
 				 tags = {TData,TClose,TError}},
 		 Protos,
 		 Timeout) ->
-    ?log_debug("accept_probe_ssl protos=~p", [Protos]),
+    ?debug("accept_probe_ssl protos=~p", [Protos]),
     setopts(X, [{active,once}]),
     receive
 	{TData, S, Data} ->
-	    ?log_debug("Accept data=~p", [Data]),
+	    ?debug("Accept data=~p", [Data]),
 	    case request_type(Data) of
 		ssl ->
-		    ?log_debug("request type: ssl",[]),
+		    ?debug("request type: ssl",[]),
 		    ok = M:unrecv(S, Data),
-		    ?log_debug("~p:unrecv(~p, ~p)", [M,S,Data]),
+		    ?debug("~p:unrecv(~p, ~p)", [M,S,Data]),
 		    %% insert ssl after transport
 		    Protos1 = X#rester_socket.protocol--([probe_ssl|Protos]),
 		    Protos2 = Protos1 ++ [ssl|Protos],
 		    accept_upgrade(X#rester_socket{protocol=Protos2},
 				   [ssl|Protos],Timeout);
 		_ -> %% not ssl
-		    ?log_debug("request type: NOT ssl",[]),
+		    ?debug("request type: NOT ssl",[]),
 		    ok = M:unrecv(S, Data),
-		    ?log_debug("~w:unrecv(~w, ~w)", [M,S,Data]),
+		    ?debug("~w:unrecv(~w, ~w)", [M,S,Data]),
 		    accept_upgrade(X,Protos,Timeout)
 	    end;
 	{TClose, S} ->
-	    ?log_debug("closed", []),
+	    ?debug("closed", []),
 	    {error, closed};
 	{TError, S, Error} ->
-	    ?log_warning("error ~w", [Error]),
+	    ?warning("error ~w", [Error]),
 	    Error
     end.
 

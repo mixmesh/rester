@@ -66,7 +66,7 @@ validate_access1({Tag, Path, User, Pass, Realm})
        is_binary(Pass) andalso is_list(Realm) ->
     ok;
 validate_access1(_Other) ->
-    ?log_error("Unknown access ~p", [_Other]),
+    ?error("Unknown access ~p", [_Other]),
     {error, invalid_access}.
 
 validate_guard([]) ->
@@ -88,7 +88,7 @@ validate_guard(IP)
        (tuple_size(IP) =:= 4 orelse tuple_size(IP) =:= 8) -> 
     validate_ip(IP);
 validate_guard(_Other) -> 
-    ?log_error("Unknown access guard ~p", [_Other]),
+    ?error("Unknown access guard ~p", [_Other]),
     {error, invalid_access}.
 
 validate_ip(_IP={A, B, C, D}) ->
@@ -98,7 +98,7 @@ validate_ip(_IP={A, B, C, D}) ->
        (is_integer(D) orelse (D =:= '*')) ->
 	    ok;
        true ->
-	    ?log_error("Illegal IP address ~p", [_IP]),
+	    ?error("Illegal IP address ~p", [_IP]),
 	    {error, invalid_access}
     end;
 validate_ip(_IP={A, B, C, D, E, F, G, H}) ->
@@ -112,11 +112,11 @@ validate_ip(_IP={A, B, C, D, E, F, G, H}) ->
        (is_integer(H) orelse (H =:= '*')) ->
 	    ok;
        true ->
-	    ?log_error("Illegal IP address ~p", [_IP]),
+	    ?error("Illegal IP address ~p", [_IP]),
 	    {error, invalid_access}
     end;
 validate_ip(_Other) ->
-    ?log_error("Illegal IP address ~p", [_Other]),
+    ?error("Illegal IP address ~p", [_Other]),
     {error, invalid_access}.
 	    
 validate_action(Access)
@@ -130,7 +130,7 @@ validate_action({accept, AccessList} = A)->
 	true -> 
 	    ok;
 	false -> 
-	    ?log_error("Illegal access ~p", [A]),
+	    ?error("Illegal access ~p", [A]),
 	    {error, invalid_access}
     end.
 
@@ -150,7 +150,7 @@ handle_access([], _Socket, _CredCallback) ->
     %% No access found
     {error, unauthorised};
 handle_access([{Guard, Action} = _Access | Rest], Socket, CredCallback) ->
-    ?log_debug("checking ~p", [_Access]),
+    ?debug("checking ~p", [_Access]),
     case match_access(Guard, Socket) of
 	true -> do(Action, CredCallback);
 	false -> handle_access(Rest, Socket, CredCallback)
@@ -160,7 +160,7 @@ handle_access([[{Tag, Path, User, Pass, Realm}| _T] = Creds | Rest],
   when (Tag =:= basic orelse Tag =:= digest) andalso
        is_list(Path) andalso is_binary(User) andalso 
        is_binary(Pass) andalso is_list(Realm) ->
-    ?log_debug("checking ~p", [Creds]),
+    ?debug("checking ~p", [Creds]),
     %% Is this format possible ???
     case apply(M, F, [Creds | Args]) of
 	ok -> ok;
@@ -172,13 +172,13 @@ handle_access([{Tag, Path, User, Pass, Realm}| _T] = Creds,
        is_list(Path) andalso is_binary(User) andalso 
        is_binary(Pass) andalso is_list(Realm) ->
     %% Old way
-    ?log_debug("checking ~p", [Creds]),
+    ?debug("checking ~p", [Creds]),
     apply(M, F, [Creds | Args]).
 	    
 do(accept, _CredCallback) -> ok;
 do(reject, _CredCallback) -> {error, unauthorised};
 do({accept, AccessList}, _CredCallback = {M, F, Args}) ->
-    ?log_debug("checking with ~p", [_CredCallback]),
+    ?debug("checking with ~p", [_CredCallback]),
     apply(M, F, [AccessList | Args]).
     
 match_access({any, GuardList}, Socket) ->
@@ -188,26 +188,26 @@ match_access({all, GuardList}, Socket) ->
     lists:all(fun(Guard) -> match_access(Guard, Socket) end, 
 	      GuardList);
 match_access(afunix, #rester_socket {mdata = afunix}) ->
-    ?log_debug("afunix true", []),
+    ?debug("afunix true", []),
     true;
 match_access(afunix, _Socket) ->
-    ?log_debug("afunix false", []),
+    ?debug("afunix false", []),
     false;
 match_access(ssl, #rester_socket {mdata = ssl, mctl = ssl}) ->
-    ?log_debug("ssl true", []),
+    ?debug("ssl true", []),
     true;
 match_access(http, Socket=#rester_socket {mdata = gen_tcp, mctl = inet}) ->
-    ?log_debug("http true ??", []),
-    ?log_debug("socket ~p", [Socket]),
+    ?debug("http true ??", []),
+    ?debug("socket ~p", [Socket]),
     %%% ???
     not rester_socket:is_ssl(Socket);
 match_access(https, Socket=#rester_socket {mdata = ssl, mctl = ssl}) ->
-    ?log_debug("https true ??", []),
-    ?log_debug("socket ~p", [Socket]),
+    ?debug("https true ??", []),
+    ?debug("socket ~p", [Socket]),
     %%% ???
     true;
 match_access({Ip, Port} = _Peer, Socket) ->
-    ?log_debug("checking ~p", [_Peer]),
+    ?debug("checking ~p", [_Peer]),
     case rester_socket:peername(Socket) of
 	{ok, {PeerIP, PeerPort}} ->
 	    ((Port =:= '*') orelse (Port =:= PeerPort)) andalso
@@ -215,13 +215,13 @@ match_access({Ip, Port} = _Peer, Socket) ->
 	_ -> false
     end;
 match_access(Ip, Socket) ->
-    ?log_debug("checking ip ~p", [Ip]),
+    ?debug("checking ip ~p", [Ip]),
     case rester_socket:peername(Socket) of
 	{ok, {PeerIP, _Port}} -> 
-	    ?log_debug("peer ip ~p", [PeerIP]),
+	    ?debug("peer ip ~p", [PeerIP]),
 	    match_ip(Ip, PeerIP);
 	_Other ->
-	    ?log_debug("no peer ip, got ~p", [_Other]),
+	    ?debug("no peer ip, got ~p", [_Other]),
 	    false
     end.
 

@@ -170,7 +170,7 @@ reusable_sessions(P) ->
 %% @end
 %%--------------------------------------------------------------------
 init([Port,Protos,Options,Module,SessionOptions] = _X) ->
-    ?log_debug("~p: init(~p)", [?MODULE, _X]),
+    ?debug("~p: init(~p)", [?MODULE, _X]),
     Active = proplists:get_value(active, Options, true),
     ReuseMode = proplists:get_value(reuse_mode, Options, none),
     Options1 = proplists:delete(reuse_mode, proplists:delete(active, Options)),
@@ -187,7 +187,7 @@ init([Port,Protos,Options,Module,SessionOptions] = _X) ->
 	    %% Acquire resource for first connection
 	    Resource = make_ref(),
 	    rester_resource:acquire_async(Resource, infinity),
-	    ?log_debug("~p: listening", [?MODULE]),
+	    ?debug("~p: listening", [?MODULE]),
 	    {ok, #state{ listen = Listen,
 			 active = Active,
 			 socket_reuse = Reuse,
@@ -215,7 +215,7 @@ init([Port,Protos,Options,Module,SessionOptions] = _X) ->
 
 handle_call({get_session, Host, Port, Opts} = _Req, From,
 	    #state{socket_reuse = Reuse} = State) ->
-    ?log_debug("~p: ~p~n", [?MODULE, _Req]),
+    ?debug("~p: ~p~n", [?MODULE, _Req]),
     Key = {Host, Port},
     case Reuse of
 	none ->
@@ -255,10 +255,10 @@ handle_call(reusable_sessions, _From, #state{socket_reuse = R} = State) ->
 	    {reply, [], State}
     end;
 handle_call(stop, _From, State) ->
-    ?log_debug("stop", []),
+    ?debug("stop", []),
     {stop, normal, ok, State};
 handle_call(_Request, _From, State) ->
-    ?log_debug("unknown request ~p.", [_Request]),
+    ?debug("unknown request ~p.", [_Request]),
     {reply, {error, bad_call}, State}.
 
 %%--------------------------------------------------------------------
@@ -272,7 +272,7 @@ handle_call(_Request, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast(_Msg, State) ->
-    ?log_debug("unknown msg ~p.", [_Msg]),
+    ?debug("unknown msg ~p.", [_Msg]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -295,13 +295,13 @@ handle_info({resource, ok, Resource},
     end;
 
 handle_info({resource, error, Reason}, State) ->
-    ?log_error("resource acquire failed, reason ~p",[Reason]),
+    ?error("resource acquire failed, reason ~p",[Reason]),
     {stop, Reason, State};
 
 handle_info({inet_async, LSocket, Ref, {ok,Socket}} = _Msg,
 	    State=#state {inet_ref = Ref, resource = Resource})
   when (State#state.listen)#rester_socket.socket =:= LSocket ->
-    ?log_debug("<-- ~p~n", [_Msg]),
+    ?debug("<-- ~p~n", [_Msg]),
     Listen = State#state.listen,
     Pid = proc_lib:spawn(fun() ->
 				 create_socket_session(Listen, Socket, State)
@@ -318,7 +318,7 @@ handle_info({inet_async, LSocket, Ref, {ok,Socket}} = _Msg,
 %% handle {ok,Socket} on bad ref ?
 handle_info({inet_async, _LSocket, Ref, {error,Reason}} = _Msg,
 	    State=#state {inet_ref = Ref}) ->
-    ?log_debug("~p: ~p~n", [?MODULE, _Msg]),
+    ?debug("~p: ~p~n", [?MODULE, _Msg]),
     %% Resource already acquired
     case rester_socket:async_accept(State#state.listen) of
 	{ok,Ref} ->
@@ -329,7 +329,7 @@ handle_info({inet_async, _LSocket, Ref, {error,Reason}} = _Msg,
     end;
 handle_info({Pid, ?MODULE, connected, Host, Port} = _Msg,
 	    #state{socket_reuse = #reuse{sessions = Sessions} = R} = State) ->
-    ?log_debug("~p: ~p~n", [?MODULE, _Msg]),
+    ?debug("~p: ~p~n", [?MODULE, _Msg]),
     Session = dict:fetch(Key = {Host, Port}, Sessions),
     case Session of
 	{_, Pending} ->
@@ -344,7 +344,7 @@ handle_info({Pid, reuse, Config} = _Msg,
 	    #state{socket_reuse = #reuse{mode = server,
 					 sessions = Sessions,
 					 session_pids = Pids} = R} = State) ->
-    ?log_debug("~p: ~p~n", [?MODULE, _Msg]),
+    ?debug("~p: ~p~n", [?MODULE, _Msg]),
     {_, Port} = lists:keyfind(port, 1, Config),
     case [H || {host, H} <- Config] of
 	[Host|_] ->
@@ -355,13 +355,13 @@ handle_info({Pid, reuse, Config} = _Msg,
 	    R1 = R#reuse{sessions = Sessions1, session_pids = Pids1},
 	    {noreply, State#state{socket_reuse = R1}};
 	_Other ->
-	    ?log_error("strange reuse config: ~p~n", [_Other]),
+	    ?error("strange reuse config: ~p~n", [_Other]),
 	    {noreply, State}
     end;
 handle_info({'DOWN', _, process, Pid, _},
 	    #state{socket_reuse = #reuse{sessions = Sessions,
 					 session_pids = Pids} = R} = State) ->
-    ?log_debug("~p got DOWN - Pid = ~p~n"
+    ?debug("~p got DOWN - Pid = ~p~n"
 	   "Sessions = ~p~n"
 	   "Pids = ~p~n", [?MODULE, Pid, dict:to_list(Sessions),
 			   dict:to_list(Pids)]),
@@ -383,7 +383,7 @@ handle_info({'DOWN', _, process, Pid, _},
 handle_info({neighbour_workers, NeighbourWorkers}, State) ->
     {noreply, State#state{neighbour_workers = NeighbourWorkers}};
 handle_info(_Info, State) ->
-    ?log_debug("unknown info ~p.", [_Info]),
+    ?debug("unknown info ~p.", [_Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -398,7 +398,7 @@ handle_info(_Info, State) ->
 %% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, State=#state {resource = Resource}) ->
-    ?log_debug("terminating, reason ~p.", [_Reason]),
+    ?debug("terminating, reason ~p.", [_Reason]),
     rester_resource:release(Resource), %% last acquired
     rester_resource:release(init), %% listen socket
     rester_socket:close(State#state.listen),
@@ -413,7 +413,7 @@ terminate(_Reason, State=#state {resource = Resource}) ->
 %% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
-    ?log_debug("code change, old version ~p.", [_OldVsn]),
+    ?debug("code change, old version ~p.", [_OldVsn]),
     {ok, State}.
 
 %%%===================================================================
@@ -431,13 +431,13 @@ create_socket_session(Listen, Socket, State) ->
                                                     [{neighbour_workers, State#state.neighbour_workers}|State#state.args]]),
 		    activate_session(State, XState0);
 		_Error ->
-		    ?log_debug("no socket session, "
+		    ?debug("no socket session, "
 				"async_socket call failed, reason ~p",
 				[_Error]),
 		    error
 	    end
     after 3000 ->
-	    ?log_warning("parent did not pass over control"),
+	    ?warning("parent did not pass over control"),
 	    error
     end.
 

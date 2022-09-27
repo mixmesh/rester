@@ -20,7 +20,7 @@
 
 -compile(export_all).
 
--ifdef(debug).
+-ifdef(DEBUG).
 -define(dbg(F, A), io:format((F), (A))).
 -else.
 -define(dbg(F, A), ok).
@@ -78,8 +78,8 @@ open(Proto, Vsn, Host, Port, Timeout) ->
 		{ok, HS} ->
 		    {ok,HS};
 		{error,_} ->
-		    connect(IPs,Port,Proto,Vsn,[{active,false}],
-			    Timeout, undefined)
+		    connect(IPs,Port,Proto,Vsn,
+			    [{active,false}],Timeout,undefined)
 	    end;
 	Error ->
 	    Error
@@ -114,7 +114,7 @@ connect([IP|IPs],Port,Proto,Vsn,Opts,Timeout,_Err) ->
 	    connect(IPs,Port,Proto,Vsn,Opts,Timeout,Reason)
     end;
 connect([],_Port,_Proto,_Vsn,_Opts,_Timeout,Reason) ->
-    ?log_debug("connect failed, reason ~p\n",[Reason]),
+    ?debug("connect failed, reason ~p\n",[Reason]),
     {error, Reason}.
     
 %%====================================================================

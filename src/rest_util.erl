@@ -37,7 +37,7 @@ parse_body(Request, Body, Options) ->
 try_parse_body(Request, Body, Options) ->
     try parse_data(Request, Body, Options) of
 	{error, _Reason} ->
-	    ?log_warning("parse failed, reason ~p", [_Reason]),
+	    ?warning("parse failed, reason ~p", [_Reason]),
 	    {error, badarg};
 	Result ->
             Result
@@ -338,7 +338,7 @@ response(Socket,Request,{error, Reason})
     rester_http_server:response_r(Socket,Request,500,"Internal Server Error",
                                   atom_to_list(Reason),[]);
 response(Socket,Request,{error, Reason}) ->
-    ?log_warning("can not handle error ~p", [Reason]),
+    ?warning("can not handle error ~p", [Reason]),
     rester_http_server:response_r(Socket,Request,500,"Internal Server Error",
                                   "",[]);
 response(Socket,Request,{error, Reason, Format, Args})
@@ -346,7 +346,7 @@ response(Socket,Request,{error, Reason, Format, Args})
     ErrorMsg = io_lib:format(Format, Args),
     response(Socket,Request,{error, Reason, ErrorMsg});
 response(Socket,Request,Other) ->
-    ?log_warning("can not handle result ~p", [Other]),
+    ?warning("can not handle result ~p", [Other]),
     rester_http_server:response_r(Socket,Request,500,"Internal Server Error",
                                   "",[]).
 
@@ -407,7 +407,7 @@ access(Socket) ->
 		{ok, {{127,0,0,1}, _Port}} -> local;
 		{ok, {_IP, _Port}} -> network; %% Allowed ??
 		_O ->
-		    ?log_warning("sockname ~p",[_O]),
+		    ?warning("sockname ~p",[_O]),
 		    unknown %% ???
 	    end
     end.

@@ -82,7 +82,7 @@
 			{error, Error::term()}.
 
 start_link(Opts) ->
-    ?log_debug("args = ~p\n", [Opts]),
+    ?debug("args = ~p\n", [Opts]),
     F =	case proplists:get_value(linked,Opts,true) of
 	    true -> start_link;
 	    false -> start
@@ -113,7 +113,7 @@ stop() ->
 		 {error, Error::atom()}.
 
 new(Key, Policy) when is_atom(Policy) ->
-    ?log_debug("new key = ~p, ~p", [Key, Policy]),
+    ?debug("new key = ~p, ~p", [Key, Policy]),
     case is_up() of
 	true ->
 	    case new_bucket({in, Key}, Policy) of
@@ -144,7 +144,7 @@ new(Key, Policy) when is_atom(Policy) ->
 
 delete({Direction, _K} = Key) when Direction =:= in;
 				   Direction =:= out ->
-    ?log_debug("delete key = ~p", [Key]),
+    ?debug("delete key = ~p", [Key]),
     ets:delete(?BUCKETS, Key);
 delete(Key) ->
    case is_up() of
@@ -165,7 +165,7 @@ delete(Key) ->
 -spec transfer(Key::term(), Owner::term()) -> ok.
 
 transfer(Key, Owner)  ->
-    ?log_debug("transfer key = ~p, owner = ~p", [Key, Owner]),
+    ?debug("transfer key = ~p, owner = ~p", [Key, Owner]),
     gen_server:cast(?SERVER, {transfer, Key, Owner}).
 
 %%--------------------------------------------------------------------
@@ -181,7 +181,7 @@ transfer(Key, Owner)  ->
 
 use({Direction, _K} = Key, Tokens) 
   when is_number(Tokens), is_atom(Direction) ->
-    ?log_debug("use key = ~p, tokens = ~p", [Key, Tokens]),
+    ?debug("use key = ~p, tokens = ~p", [Key, Tokens]),
     case is_up() of
 	true ->
 	    use_tokens(Key, Tokens);
@@ -200,7 +200,7 @@ use({Direction, _K} = Key, Tokens)
 			   {error, Error::atom()}.
 
 fill({Direction, _K} = Key) when is_atom(Direction) ->
-    ?log_debug("fill key = ~p", [Key]),
+    ?debug("fill key = ~p", [Key]),
     case is_up() of
 	true ->
 	    case ets:lookup(?BUCKETS, Key) of
@@ -225,7 +225,7 @@ fill({Direction, _K} = Key) when is_atom(Direction) ->
 
 fill_time({Direction, _K} = Key, Tokens) 
   when is_number(Tokens), is_atom(Direction) ->
-    ?log_debug("fill_time key = ~p, tokens = ~p", [Key, Tokens]),
+    ?debug("fill_time key = ~p, tokens = ~p", [Key, Tokens]),
     case is_up() of
 	true ->
 	    case ets:lookup(?BUCKETS, Key) of
@@ -252,7 +252,7 @@ fill_time({Direction, _K} = Key, Tokens)
 
 wait({Direction, _K} = Key, Tokens) 
   when is_number(Tokens), is_atom(Direction) ->
-   ?log_debug("wait key = ~p, tokens = ~p", [Key, Tokens]),
+   ?debug("wait key = ~p, tokens = ~p", [Key, Tokens]),
     case is_up() of
 	true ->
 	    case ets:lookup(?BUCKETS, Key) of
@@ -279,7 +279,7 @@ wait({Direction, _K} = Key, Tokens)
 
 fill_wait({Direction, _K} = Key, Tokens) 
   when is_number(Tokens), is_atom(Direction) ->
-   ?log_debug("fill_wait key = ~p, tokens = ~p", [Key, Tokens]),
+   ?debug("fill_wait key = ~p, tokens = ~p", [Key, Tokens]),
     case is_up() of
 	true ->
 	    case ets:lookup(?BUCKETS, Key) of
@@ -347,7 +347,7 @@ dump() ->
 		  {stop, Reason::term()}.
 
 init(Args) ->
-    ?log_debug("args = ~p,\n pid = ~p\n", [Args, self()]),
+    ?debug("args = ~p,\n pid = ~p\n", [Args, self()]),
     BTab = ets:new(?BUCKETS, [named_table, public, {keypos, #bucket.key}]),
     PTab = ets:new(?POLICIES, [named_table, public, {keypos, #bucket.key}]),
     OTab = ets:new(bucket_owners, [named_table]),
@@ -382,18 +382,18 @@ init(Args) ->
 			 {stop, Reason::atom(), Reply::term(), Ctx::#ctx{}}.
 
 handle_call({stats, Owner} = _Req, _From, Ctx=#ctx {owners = Owners}) ->
-    ?log_debug("~p",[_Req]),
+    ?debug("~p",[_Req]),
     {reply, handle_stats(Owner, Owners), Ctx};
 handle_call(dump, _From, Ctx=#ctx {buckets = T}) ->
     io:format("Ctx: Buckets = ~p.", [ets:tab2list(T)]),
     {reply, ok, Ctx};
 
 handle_call(stop, _From, Ctx) ->
-    ?log_debug("stop.",[]),
+    ?debug("stop.",[]),
     {stop, normal, ok, Ctx};
 
 handle_call(_Request, _From, Ctx) ->
-    ?log_debug("unknown request ~p.", [_Request]),
+    ?debug("unknown request ~p.", [_Request]),
     {reply, {error,bad_call}, Ctx}.
 
 %%--------------------------------------------------------------------
@@ -411,23 +411,23 @@ handle_call(_Request, _From, Ctx) ->
 			 {stop, Reason::term(), Ctx::#ctx{}}.
 
 handle_cast({add, Pid, Key} = _M, Ctx=#ctx {owners = Owners}) ->
-    ?log_debug("message ~p", [_M]),
+    ?debug("message ~p", [_M]),
     add_owner(Pid, Key, Owners),
     {noreply, Ctx};
 
 handle_cast({remove, Key} = _M, Ctx=#ctx {owners = Owners}) ->
-    ?log_debug("message ~p", [_M]),
+    ?debug("message ~p", [_M]),
     remove_owner(Key, Owners),
     {noreply,Ctx};
 
 handle_cast({transfer, Key, Pid} = _M, Ctx=#ctx {owners = Owners}) ->
-    ?log_debug("message ~p", [_M]),
+    ?debug("message ~p", [_M]),
     remove_owner(Key, Owners),
     add_owner(Pid, Key, Owners),
     {noreply,Ctx};
 
 handle_cast(_Msg, Ctx) ->
-    ?log_debug("unknown msg ~p.", [_Msg]),
+    ?debug("unknown msg ~p.", [_Msg]),
     {noreply, Ctx}.
 
 %%--------------------------------------------------------------------
@@ -447,7 +447,7 @@ handle_cast(_Msg, Ctx) ->
 
 handle_info({'DOWN',Ref,process,Pid,_Reason} = _I,
 	    Ctx=#ctx {owners = Owners}) ->
-   ?log_debug("info ~p", [_I]),
+   ?debug("info ~p", [_I]),
     case ets_take(Owners, {Pid, Ref}) of
 	[{{Pid, Ref}, Key}] ->
 	    erlang:demonitor(Ref, [flush]),
@@ -455,12 +455,12 @@ handle_info({'DOWN',Ref,process,Pid,_Reason} = _I,
 	    ets:delete(?BUCKETS, {out, Key}),
 	    ets:delete(Owners, Key);
 	_Other ->
-	    ?log_debug("unexpected ~p", [_Other])
+	    ?debug("unexpected ~p", [_Other])
     end,
     {noreply, Ctx};
 
 handle_info(_Info, Ctx) ->
-    ?log_debug("unknown info ~p.", [_Info]),
+    ?debug("unknown info ~p.", [_Info]),
     {noreply, Ctx}.
 
 %%--------------------------------------------------------------------
@@ -470,7 +470,7 @@ handle_info(_Info, Ctx) ->
 		       no_return().
 
 terminate(_Reason, _Ctx) ->
-    ?log_debug("terminating, reason = ~p.",[_Reason]),
+    ?debug("terminating, reason = ~p.",[_Reason]),
     ok.
 %%--------------------------------------------------------------------
 %% @private
@@ -483,7 +483,7 @@ terminate(_Reason, _Ctx) ->
 			 {ok, NewCtx::#ctx{}}.
 
 code_change(_OldVsn, Ctx, _Extra) ->
-    ?log_debug("old version ~p.", [_OldVsn]),
+    ?debug("old version ~p.", [_OldVsn]),
     {ok, Ctx}.
 
 
@@ -514,7 +514,7 @@ add_bucket(Table, Key, Opts) ->
 		      action = Action,
 		      parent = Parent,
 		      timestamp = erlang_system_time_us()},
-    ?log_debug("bucket ~p created,", [Bucket]),
+    ?debug("bucket ~p created,", [Bucket]),
     ets:insert(Table, Bucket).
 
 new_bucket({Direction, _K} = Key, PolicyName) -> 
@@ -524,10 +524,10 @@ new_bucket({Direction, _K} = Key, PolicyName) ->
 		      Policy#bucket{key=Key, 
 				    current = C, 
 				    timestamp = erlang_system_time_us()}),
-	   ?log_debug("bucket ~p created.", [Key]),
+	   ?debug("bucket ~p created.", [Key]),
 	   ok;
        [] -> 
-	   ?log_warning("no policy found for ~p", [{Direction, PolicyName}]),
+	   ?warning("no policy found for ~p", [{Direction, PolicyName}]),
 	   {error,no_policy}
     end.
 
@@ -535,7 +535,7 @@ use_tokens({in, _K} = Key, Tokens) ->
     %% Incoming data is already received so use is forced,
     %% Note that current can become negative!
     Current = ets:lookup_element(?BUCKETS, Key, #bucket.current),
-    if Current - Tokens < 0 -> ?log_warning("bucket ~p negative.", [Key]);
+    if Current - Tokens < 0 -> ?warning("bucket ~p negative.", [Key]);
        true -> ok
     end,
     ets:update_element(?BUCKETS, Key, [{#bucket.current, Current - Tokens}]),
@@ -547,10 +547,10 @@ use_tokens({out, _K} = Key, Tokens) ->
 			       [{#bucket.current, Current - Tokens}]),
 	    ok;
 	[_B=#bucket {action = Action}] ->
-	    ?log_debug("not enough tokens in bucket ~p, ~p.", [Key, Action]),
+	    ?debug("not enough tokens in bucket ~p, ~p.", [Key, Action]),
 	    {action, Action};
 	[] ->
-	    ?log_warning("unknown key ~p.", [Key]),
+	    ?warning("unknown key ~p.", [Key]),
 	    {error, unknown_key}
     end.
 
@@ -561,7 +561,7 @@ fill_bucket(B) when is_record(B, bucket) ->
     Tokens = if Current < Capacity ->
 		     Dt = time_delta(Now, B#bucket.timestamp),
 		     New = B#bucket.rate * Dt,
-		     ?log_debug("bucket ~p tokens to fill ~p", 
+		     ?debug("bucket ~p tokens to fill ~p", 
 				 [B#bucket.key, New]),
 		erlang:min(Capacity, Current + New);
 	   true ->
@@ -577,8 +577,8 @@ bucket_fill_time(B, Tokens) when is_record(B, bucket) ->
        true ->
 	    Ts = Tokens - Current,  %% tokens to wait for
 	    Sec = Ts / B#bucket.rate, %% seconds to wait
-	    ?log_debug("bucket ~p tokens to wait for ~p.", [B#bucket.key, Ts]),
-	    ?log_debug("bucket ~p time to wait ~p.", [B#bucket.key, Sec]),
+	    ?debug("bucket ~p tokens to wait for ~p.", [B#bucket.key, Ts]),
+	    ?debug("bucket ~p time to wait ~p.", [B#bucket.key, Sec]),
 	    {ok, Sec}
     end.
 
@@ -586,7 +586,7 @@ bucket_wait(B, Tokens)  when is_record(B, bucket) ->
     {ok, Ts} = bucket_fill_time(B, Tokens),
     Tms = Ts*1000,
     Delay = trunc(Tms),
-    ?log_debug("bucket ~p sleeping ~p ms.", [B#bucket.key, Delay]),
+    ?debug("bucket ~p sleeping ~p ms.", [B#bucket.key, Delay]),
     if Delay < Tms ->
 	    timer:sleep(Delay+1);
        Delay > 0 ->
@@ -606,7 +606,7 @@ remove_owner(Key, Owners) ->
 	    erlang:demonitor(Ref, [flush]),
 	    ets:delete(Owners, PR);
 	_Other ->
-	    ?log_warning("unexpected owner take result ~p", [_Other])
+	    ?warning("unexpected owner take result ~p", [_Other])
     end.	
 
 handle_stats(Owner, Owners) ->

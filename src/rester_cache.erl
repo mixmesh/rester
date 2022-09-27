@@ -58,10 +58,10 @@ request_(S, Req, Body, Proxy, Timeout) ->
 	    %% FIXME: take care of POST 100-continue
 	    case rester_http:recv_response(S, Timeout) of
 		{ok, Resp} ->
-		    ?log_debug("response: ~p", [Resp]),
+		    ?debug("response: ~p", [Resp]),
 		    get_body_(S, Resp, Timeout);
 		Error ->
-		    ?log_debug("response: ~p", [Error]),
+		    ?debug("response: ~p", [Error]),
 		    Error
 	    end;
 	Error -> Error
@@ -92,7 +92,7 @@ get_body_(S, Resp, Timeout) ->
 	    write_meta(Dir, Resp),
 	    {ok,Resp,{Size,RespBody}};
 	Error ->
-	    ?log_debug("body: ~p", [Error]),
+	    ?debug("body: ~p", [Error]),
 	    Error
     after
 	file:close(Fd)

@@ -89,7 +89,7 @@ start_link(Port, Options) ->
 
 
 do_start(Start, Port, Options) ->
-    ?log_debug("~w: port ~p, server options ~p", [Start, Port, Options]),
+    ?debug("~w: port ~p, server options ~p", [Start, Port, Options]),
     {SessionOptions,Options1} =
 	rester_lib:split_options([request_handler,access,private_key,idle_timeout],
 			      Options),
@@ -131,11 +131,12 @@ stop(Pid) ->
 		  {ok, State::#state{}}.
 
 init(Socket, Options) ->
-    ?log_debug("connection on: ~p ", [Socket]),
+    ?debug("connection on: ~p ", [Socket]),
     {ok, _PeerName} = rester_socket:peername(Socket),
     {ok, _SockName} = rester_socket:sockname(Socket),
-    ?log_debug("connection from peer: ~p, sockname: ~p,"
+    ?debug("connection from peer: ~p, sockname: ~p,"
 		"options ~p", [_PeerName, _SockName, Options]),
+    %% rester_socket:setopts(Socket, [{nodelay,true}]),
     Access = proplists:get_value(access, Options, []),
     RH = proplists:get_value(request_handler, Options, undefined),
     PrivateKey = proplists:get_value(private_key, Options, ""),
@@ -169,7 +170,7 @@ control(_Socket, _Request, _From, State) ->
 		  {stop, {error, Reason::term()}, NewState::#state{}}.
 
 data(Socket, Data, State) ->
-    ?log_debug("~w: data = ~w", [self(),Data]),
+    ?debug("~w: data = ~w", [self(),Data]),
     case Data of
 	{http_request, Method, Uri, Version} ->
 	    CUri = rester_http:convert_uri(Uri),
@@ -185,7 +186,7 @@ data(Socket, Data, State) ->
 	{http_error, ?NL} ->
 	    {ok, State};
 	_ when is_list(Data); is_binary(Data) ->
-	    ?log_debug("request data: ~p", [Data]),
+	    ?debug("request data: ~p", [Data]),
 	    {stop, {error,sync_error}, State};
 	Error ->
 	    {stop, Error, State}
@@ -204,7 +205,7 @@ data(Socket, Data, State) ->
 		  {stop, {error, Reason::term()}, NewState::#state{}}.
 
 info(_Socket, Info, State) ->
-    ?log_debug("~w: info = ~w", [self(),Info]),
+    ?debug("~w: info = ~w", [self(),Info]),
     {ok,State}.
 
 %%-----------------------------------------------------------------------------
@@ -218,7 +219,7 @@ info(_Socket, Info, State) ->
 		   {ok, NewState::#state{}}.
 
 close(_Socket, State) ->
-    ?log_debug("close"),
+    ?debug("close"),
     {ok,State}.
 
 %%-----------------------------------------------------------------------------
@@ -234,23 +235,23 @@ close(_Socket, State) ->
 		   {stop, {error, Reason::term()}, NewState::#state{}}.
 
 error(_Socket,Error,State) ->
-    ?log_debug("error = ~p", [Error]),
+    ?debug("error = ~p", [Error]),
     {stop, Error, State}.
 
 
 handle_request(Socket, R, State) ->
-    ?log_debug("request = ~s",
+    ?debug("request = ~s",
 	 [[rester_http:format_request(R),?CRNL,
 	   rester_http:format_hdr(R#http_request.headers),
 	   ?CRNL]]),
     case rester_http:recv_body(Socket, R) of
 	{ok, Body} ->
-	    ?log_debug("body = ~p", [Body]),
+	    ?debug("body = ~p", [Body]),
 	    case handle_auth(Socket, R, Body, State) of
 		ok ->
 		    handle_body(Socket, R, Body, State);
 		{required,AuthenticateValue,State} ->
-		    ?log_debug("autentication required"),
+		    ?debug("autentication required"),
 		    V = response_r(Socket,R,401,"Unauthorized", "",
 				   [{'WWW-Authenticate', AuthenticateValue}]),
 		    case V of
@@ -258,7 +259,7 @@ handle_request(Socket, R, State) ->
 			stop -> {stop, normal, State}
 		    end;
 		{error, unauthorised} ->
-		    ?log_debug("unauthorised"),
+		    ?debug("unauthorised"),
 		    V = response_r(Socket,R,401,"Unauthorized","",[]),
 		    case V of
 			ok -> {ok,State};
@@ -267,10 +268,10 @@ handle_request(Socket, R, State) ->
 	    end;
 
 	{error, closed} ->
-	    ?log_warning("socket closed"),
+	    ?warning("socket closed"),
 	    {stop, normal,State};
 	Error ->
-	    ?log_warning("socket error ~p", [Error]),
+	    ?warning("socket error ~p", [Error]),
 	    {stop, Error, State}
     end.
 
@@ -290,10 +291,10 @@ handle_auth(Socket, Request, Body, State=#state {access = Access})
 handle_creds(Creds, Socket, Request, Body, State) ->
     Header = Request#http_request.headers,
     Autorization = get_authorization(Header#http_chdr.authorization),
-    ?log_debug("authorization = ~p", [Autorization]),
+    ?debug("authorization = ~p", [Autorization]),
     case match_access_path(Request#http_request.uri, Creds) of
 	[Cred={basic,_Path,_User,_Password,_Realm}|_] ->
-	    ?log_debug("cred = ~p", [Cred]),
+	    ?debug("cred = ~p", [Cred]),
 	    handle_basic_auth(Socket, Request, Body, Autorization,
 			      Cred, State);
 	[Cred={digest,_Path,_User,_Password,_Realm}|_] ->
@@ -408,14 +409,14 @@ unq_([]) -> [].
 
 handle_body(Socket, Request, Body, State) ->
     RH = State#state.request_handler,
-    ?log_debug("calling ~p with -BODY:\n~p\n-END-BODY", [RH, Body]),
+    ?debug("calling ~p with -BODY:\n~p\n-END-BODY", [RH, Body]),
     {M, F, As} = request_handler(RH, Socket, Request, Body, State),
     try apply(M, F, As) of
 	ok -> {ok, State};
 	stop -> {stop, normal, State};
 	{error, Error} ->  {stop, Error, State}
     catch error:_E ->
-	    ?log_error("call to request_handler ~p failed, reason ~p",
+	    ?error("call to request_handler ~p failed, reason ~p",
 			[RH, _E]),
 	    {stop, internal_error, State}
     end.
@@ -503,7 +504,7 @@ response(S, Connection, Status, Phrase, Body, Opts) ->
 		rester_http:format_hdr(H),
 		?CRNL,
 		Body],
-    ?log_debug("response:\n~s", [Response]),
+    ?debug("response:\n~s", [Response]),
     rester_socket:send(S, Response),
     if Connection1 =:= "close" ->
 	    stop;
@@ -572,7 +573,7 @@ response_r(S, Request, Status, Phrase, Body, Opts) ->
                     _ ->
                         Body
                 end],
-    ?log_debug("response:\n~s", [Response]),
+    ?debug("response:\n~s", [Response]),
     rester_socket:send(S, Response),
     case Body of
         {file, Filename} ->
@@ -652,7 +653,7 @@ opt_take(K, L, Def) ->
 %% @private
 handle_http_request(Socket, Request, Body) ->
     Url = Request#http_request.uri,
-    ?log_debug("\n-BODY:\n~s\n-END-BODY", [Body]),
+    ?debug("\n-BODY:\n~s\n-END-BODY", [Body]),
     if Request#http_request.method =:= 'GET',
        Url#url.path =:= "/quit" ->
 	    response_r(Socket, Request, 200, "OK", "QUIT",

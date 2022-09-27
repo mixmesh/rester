@@ -1,8 +1,6 @@
 -ifndef(_RESTER_HRL_).
 -define(_RESTER_HRL_, true).
 
--include_lib("apptools/include/log.hrl").
-
 -type path() :: string().
 -type user() :: binary().
 -type password() :: binary().
@@ -19,14 +17,37 @@
 -type action() :: accept | reject | {accept , list(cred())}.
 -type access() :: cred() | {guard(), action()}.
 
--define(log_debug(F,A), ?dbg_log_fmt((F), (A))).
--define(log_debug(F),   ?dbg_log_fmt((F), [])).
+-ifdef(USE_APPTOOLS).
+-include_lib("apptools/include/log.hrl").
 
--define(log_warning(F,A), ?daemon_log_tag_fmt(warning, (F), (A))).
--define(log_warning(F), ?daemon_log_tag_fmt(warning, (F), [])).
--define(log_error(F,A), ?daemon_log_tag_fmt(error, (F), (A))).
--define(log_error(F), ?daemon_log_tag_fmt(error, (F), [])).
--define(log_info(F,A), ?daemon_log_tag_fmt(info, (F), (A))).
--define(log_info(F), ?daemon_log_tag_fmt(info, (F), [])).
+-define(debug(F,A), ?dbg_log_fmt((F), (A))).
+-define(debug(F),   ?dbg_log_fmt((F), [])).
+
+-define(warning(F,A), ?daemon_log_tag_fmt(warning, (F), (A))).
+-define(warning(F), ?daemon_log_tag_fmt(warning, (F), [])).
+
+-define(info(F,A), ?daemon_log_tag_fmt(info, (F), (A))).
+-define(info(F), ?daemon_log_tag_fmt(info, (F), [])).
+
+-define(error(F,A), ?daemon_log_tag_fmt(error, (F), (A))).
+-define(error(F), ?daemon_log_tag_fmt(error, (F), [])).
+
+-else.
+
+-include_lib("kernel/include/logger.hrl").
+
+-define(debug(_Format), ?debug(_Format, [])).
+-define(debug(_Format, _Args), ?LOG_DEBUG(_Format, _Args)).
+
+-define(warning(_Format), ?warning(_Format, [])).
+-define(warning(_Format, _Args), ?LOG_WARNING(_Format, _Args)).
+
+-define(info(_Format), ?info(_Format, [])).
+-define(info(_Format, _Args), ?LOG_INFO(_Format, _Args)).
+
+-define(error(_Format), ?error(_Format, [])).
+-define(error(_Format, _Args), ?LOG_ERROR(_Format, _Args)).
+
+-endif.
 
 -endif.

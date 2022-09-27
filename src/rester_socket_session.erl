@@ -107,14 +107,14 @@ init([XSocket, Module, Args]) ->
 %% No 'local' handle_call
 handle_call(Request, From, 
 	    State=#state{module = M, state = MSt, socket = Socket}) ->
-    ?log_debug("~p", [Request]),
+    ?debug("~p", [Request]),
     try M:control(Socket, Request, From, MSt) of
 	Result -> 
-	    ?log_debug("reply ~p", [Result]),
+	    ?debug("reply ~p", [Result]),
 	    control_reply(Result, From, State)
     catch
 	error:_Error -> 
-	    ?log_debug("catch reason  ~p", [_Error]),
+	    ?debug("catch reason  ~p", [_Error]),
 	    ret({reply, {error, unknown_call}, State})
     end.
 
@@ -141,17 +141,17 @@ control_reply({send, Bin, MSt, Timeout}, From, State) ->
     ret({noreply, State1, Timeout});
 control_reply({stop, Reason, MSt}, _From, State) ->
     %% Terminating
-    ?log_debug("stopping ~p with reason ~p", [self(), Reason]),
+    ?debug("stopping ~p with reason ~p", [self(), Reason]),
     {stop, Reason, State#state{state = MSt}};
 control_reply({stop, Reason, Reply, MSt}, _From, State) ->
     %% Terminating
-    ?log_debug("stopping ~p with reason ~p", [self(), Reason]),
+    ?debug("stopping ~p with reason ~p", [self(), Reason]),
     {stop, Reason, Reply, State#state{state = MSt}}.
 
 send_(Bin, From, #state{socket = S, pending = P} = State) ->
     P1 = if P == [] ->
 		 rester_socket:send(S, Bin),
-		 ?log_debug("bin sent to ~p", [S]),
+		 ?debug("bin sent to ~p", [S]),
 		 [{From,Bin}|P];
 	    true -> P
 	 end,
@@ -173,7 +173,7 @@ send_(Bin, From, #state{socket = S, pending = P} = State) ->
 			 {stop, Reason::atom(), State::#state{}}.
 
 handle_cast({activate,Active}, State) ->
-    ?log_debug("activate~n", []),
+    ?debug("activate~n", []),
     case apply(State#state.module, init,
 	       [State#state.socket,State#state.args]) of
 	Ok when element(1, Ok) == ok ->
@@ -184,7 +184,7 @@ handle_cast({activate,Active}, State) ->
 	    SessionOpts = [{active,Active},{exit_on_close, false}],
 	    
 	    _Res = rester_socket:setopts(State#state.socket, SessionOpts),
-	    ?log_debug("rester_socket: setopts(~w) = ~w\n", 
+	    ?debug("rester_socket: setopts(~w) = ~w\n", 
 		       [SessionOpts, _Res]),
 	    State1 = State#state { active = Active, state = CSt0 },
 	    case Ok of
@@ -214,19 +214,19 @@ handle_cast(_Msg, State) ->
 
 handle_info(timeout, State) ->
     rester_socket:shutdown(State#state.socket, write),
-    ?log_debug("idle_timeout~p~n", [self()]),
+    ?debug("idle_timeout~p~n", [self()]),
     {stop, normal, State};
 handle_info({Tag,Socket,Data0},State=#state {socket = S}) when 
       %% FIXME: put socket tag in State for correct matching
       (Tag =:= tcp orelse Tag =:= ssl orelse Tag =:= http), 
       Socket =:= S#rester_socket.socket ->
-    ?log_debug("got data ~p\n", [{Tag,Socket,Data0}]),
+    ?debug("got data ~p\n", [{Tag,Socket,Data0}]),
     maybe_flow_control(S, use, 1), %% Count down
     handle_socket_data(Data0, data, State);
 handle_info({Tag,Socket}, State) when
       (Tag =:= tcp_closed orelse Tag =:= ssl_closed),
       Socket =:= (State#state.socket)#rester_socket.socket ->
-    ?log_debug("got tag ~p\n", [{Tag,Socket}]),
+    ?debug("got tag ~p\n", [{Tag,Socket}]),
     CSt0 = State#state.state,
     case apply(State#state.module, close, [State#state.socket,CSt0]) of
 	{ok,CSt1} ->
@@ -235,7 +235,7 @@ handle_info({Tag,Socket}, State) when
 handle_info({Tag,Socket,Error}, State) when 
       (Tag =:= tcp_error orelse Tag =:= ssl_error),
       Socket =:= (State#state.socket)#rester_socket.socket ->
-    ?log_debug("got error ~p\n", [{Tag,Socket,Error}]),
+    ?debug("got error ~p\n", [{Tag,Socket,Error}]),
     CSt0 = State#state.state,
     case apply(State#state.module, error, [State#state.socket,Error,CSt0]) of
 	{ok,CSt1} ->
@@ -245,16 +245,16 @@ handle_info({Tag,Socket,Error}, State) when
     end;
 handle_info({timeout, Ref, {active, Value}}, 
 	    State=#state {active_timer = Ref, socket = S}) ->
-    ?log_debug("got active_timeout ~p\n", [Value]),
+    ?debug("got active_timeout ~p\n", [Value]),
     maybe_flow_control(S, fill),
     rester_socket:setopts(State#state.socket, [{active,Value}]),
     ret({noreply, State#state {active_timer = undefined}});
 
 handle_info(Info, State) ->
-    ?log_debug("Got info: ~p\n", [Info]),
+    ?debug("Got info: ~p\n", [Info]),
     try handle_socket_data(Info, info, State)
     catch error:_E ->
-	    ?log_debug("call failed, reason ~p\n", [_E]),
+	    ?debug("call failed, reason ~p\n", [_E]),
 	    ret({noreply, State})
     end.
 
@@ -272,7 +272,7 @@ handle_info(Info, State) ->
 		       no_return().
 
 terminate(_Reason, State) ->
-    ?log_debug("terminating, reason ~p.", [_Reason]),
+    ?debug("terminating, reason ~p.", [_Reason]),
     rester_socket:close(State#state.socket).
 
 %%--------------------------------------------------------------------
@@ -287,7 +287,7 @@ terminate(_Reason, State) ->
 			 {ok, NewState::#state{}}.
 
 code_change(_OldVsn, State, _Extra) ->
-    ?log_debug("code change, old version ~p.", [_OldVsn]),
+    ?debug("code change, old version ~p.", [_OldVsn]),
     {ok, State}.
 
 %%%===================================================================
@@ -309,21 +309,21 @@ ret(R) ->
 
 handle_socket_data(Data, F, 
 		   State=#state {module = M, state = CSt0, socket = S}) ->
-    ?log_debug("call ~p:~p", [M,F]),
+    ?debug("call ~p:~p", [M,F]),
     ModResult = apply(M, F, [S,Data,CSt0]),
-    ?log_debug("result ~p", [ModResult]),
+    ?debug("result ~p", [ModResult]),
     data_result(ModResult, State).
 
 data_result({ok,CSt1}, State) ->
     TRef = handle_active(State),
     ret({noreply, State#state { state = CSt1, active_timer = TRef }});
 data_result({close, CSt1}, State) ->
-    ?log_debug("closing"),
+    ?debug("closing"),
     rester_socket:shutdown(State#state.socket, write),
     ret({noreply, State#state { state = CSt1 }});
 data_result({stop,Reason,CSt1}, State) ->
     %% shutdown here ???
-    ?log_debug("stopping"),
+    ?debug("stopping"),
     {stop, Reason, State#state { state = CSt1 }};
 data_result({reply, Rep, CSt1}, State) ->
     TRef = handle_active(State),
@@ -349,7 +349,7 @@ handle_active(State=#state {socket = S, active = Active}) ->
 		   {ok, Time} ->  trunc(Time * 1000);
 		   {error, _E} -> 0
 	       end,
-    ?log_debug("{active, time} = ~p",[ {Active, WaitTime} ]),
+    ?debug("{active, time} = ~p",[ {Active, WaitTime} ]),
     case {Active, WaitTime} of
 	{once, 0} ->
 	    rester_socket:setopts(State#state.socket, [{active,once}]),
@@ -364,7 +364,7 @@ handle_active(State=#state {socket = S, active = Active}) ->
 	    rester_socket:setopts(State#state.socket, [{active,false}]),
 	    erlang:start_timer(T, self(), {active, true});
 	{false, _T} = _Other->
-	    ?log_error(" Not handled {active, time} = ~p",[_Other]),
+	    ?error(" Not handled {active, time} = ~p",[_Other]),
 	    maybe_flow_control(S, fill),
 	    undefined; %% ???
 	{N, 0} when is_number(N) ->
@@ -375,7 +375,7 @@ handle_active(State=#state {socket = S, active = Active}) ->
 	    erlang:start_timer(T, self(), {active, N}); %% ???
 	_Other ->
 	    %% What is this??
-	    ?log_error("Unexpected {active, time} = ~p",[ _Other]),
+	    ?error("Unexpected {active, time} = ~p",[ _Other]),
 	    maybe_flow_control(S, fill),
 	    undefined
     end.

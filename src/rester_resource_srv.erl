@@ -86,15 +86,15 @@ handle_call(dump, _From,
     {reply, ok, Ctx};
 
 handle_call({avail, I} = _R, _From, Ctx) ->
-    ?log_debug("call ~p",[_R]),
+    ?debug("call ~p",[_R]),
     {reply, {ok, I}, Ctx#ctx {available = I}};
 
 handle_call(stop, _From, Ctx) ->
-    ?log_debug("stop.",[]),
+    ?debug("stop.",[]),
     {stop, normal, ok, Ctx};
 
 handle_call(_R, _From, Ctx) ->
-    ?log_debug("unknown request ~p.", [_R]),
+    ?debug("unknown request ~p.", [_R]),
     {reply, {error,bad_call}, Ctx}.
 
 %%--------------------------------------------------------------------
@@ -121,7 +121,7 @@ handle_call(_R, _From, Ctx) ->
 
 handle_cast({acquire, {Pid, _Ref} = Resource, Timeout} = _M, 
 	    Ctx=#ctx {resources = Resources}) ->
-    ?log_debug("cast ~p.", [_M]),
+    ?debug("cast ~p.", [_M]),
     NewCtx = case dict:is_key(Resource, Resources) of
 		 false -> 
 		     handle_acquire(Resource, Timeout, Ctx);
@@ -132,7 +132,7 @@ handle_cast({acquire, {Pid, _Ref} = Resource, Timeout} = _M,
     {noreply, NewCtx};
 
 handle_cast({release, Resource} = _M, Ctx=#ctx {resources = Resources}) ->
-    ?log_debug("cast ~p.", [_M]),
+    ?debug("cast ~p.", [_M]),
     NewCtx = case dict:is_key(Resource, Resources) of
 		 false -> Ctx;
 		 true -> handle_release(Resource, Ctx)
@@ -141,7 +141,7 @@ handle_cast({release, Resource} = _M, Ctx=#ctx {resources = Resources}) ->
 
 handle_cast({transfer, Resource, NewPid} = _M, 
 	    Ctx=#ctx {resources = Resources}) ->
-    ?log_debug("cast ~p.", [_M]),
+    ?debug("cast ~p.", [_M]),
     NewCtx = case dict:is_key(Resource, Resources) of
 		 false -> Ctx;
 		 true -> handle_transfer(Resource, NewPid, Ctx)
@@ -149,7 +149,7 @@ handle_cast({transfer, Resource, NewPid} = _M,
     {noreply, NewCtx};
 
 handle_cast(_M, Ctx) ->
-    ?log_debug("unknown msg ~p.", [_M]),
+    ?debug("unknown msg ~p.", [_M]),
     {noreply, Ctx}.
 
 
@@ -176,7 +176,7 @@ handle_cast(_M, Ctx) ->
 
 handle_info({timeout, Timer, {acquire, Resource}} = _I, 
 	    Ctx=#ctx {resources = Resources}) ->
-    ?log_debug("info ~p.", [_I]),
+    ?debug("info ~p.", [_I]),
     NewCtx = case dict:is_key(Resource, Resources) of
 		 false -> Ctx;
 		 true -> handle_timeout(Resource, Timer, Ctx)
@@ -184,11 +184,11 @@ handle_info({timeout, Timer, {acquire, Resource}} = _I,
     {noreply, NewCtx};
 
 handle_info({'DOWN', _Mon, process, _Pid, _Reason} = I, Ctx) ->
-    ?log_debug("info ~p.", [I]),
+    ?debug("info ~p.", [I]),
     {noreply, handle_down(I, Ctx)};
 
 handle_info(_Info, Ctx) ->
-    ?log_debug("unknown info ~p.", [_Info]),
+    ?debug("unknown info ~p.", [_Info]),
     {noreply, Ctx}.
 
 %%--------------------------------------------------------------------
@@ -202,7 +202,7 @@ handle_info(_Info, Ctx) ->
 		       no_return().
 
 terminate(_Reason, _Ctx=#ctx {state = State}) ->
-    ?log_debug("terminating in state ~p, reason = ~p.",
+    ?debug("terminating in state ~p, reason = ~p.",
 		[State, _Reason]),
     ok.
 %%--------------------------------------------------------------------
@@ -216,7 +216,7 @@ terminate(_Reason, _Ctx=#ctx {state = State}) ->
 			 {ok, NewCtx::#ctx{}}.
 
 code_change(_OldVsn, Ctx, _Extra) ->
-    ?log_debug("old version ~p.", [_OldVsn]),
+    ?debug("old version ~p.", [_OldVsn]),
     {ok, Ctx}.
 
 
@@ -233,7 +233,7 @@ handle_acquire(Resource, Timeout,
 	       Ctx=#ctx {resources = Resources, waiting = Waiting}) ->
     NewResources = supervise(Resource, Resources),
     Timer = start_timer(Resource, Timeout),
-    ?log_debug("no resource available, ~p waiting", [Resource]),
+    ?debug("no resource available, ~p waiting", [Resource]),
      Ctx#ctx {resources = NewResources, 
 	     waiting = Waiting ++ [{Resource, Timer}]}.
 
@@ -253,7 +253,7 @@ handle_waiting([{{Pid, Ref}, Timer} | Rest], Ctx=#ctx {available = Avail})
   when Avail > 0 ->
     Pid ! {resource, ok, Ref},
     cancel_timer(Timer),
-    ?log_debug("resource available after release, ~p informed", [Pid]),
+    ?debug("resource available after release, ~p informed", [Pid]),
     handle_waiting(Rest, Ctx#ctx {available = Avail - 1});
 handle_waiting(NewWaiting, Ctx) ->
     %% No more available resources or no more processes waiting
@@ -265,11 +265,11 @@ handle_timeout(Resource, Timer,
     case lists:keytake(Resource, 1, Waiting) of
 	{value, {{Pid, Ref} = Resource, Timer}, NewWaiting} ->
 	    Pid ! {resource, ok, Ref},
-	    ?log_debug("resource available after timeout, ~p informed", 
+	    ?debug("resource available after timeout, ~p informed", 
 			[Pid]),
 	    #ctx {available = Avail - 1, waiting = NewWaiting};
 	false ->
-	    ?log_warning("resource ~p not found in waiting list", [Resource]),
+	    ?warning("resource ~p not found in waiting list", [Resource]),
 	    Ctx
     end;
 handle_timeout(Resource, Timer, 
@@ -279,7 +279,7 @@ handle_timeout(Resource, Timer,
      case lists:keytake(Resource, 1, Waiting) of
 	 {value, {{Pid, _Ref} = Resource, Timer}, NewWaiting} ->
 	     Pid ! {resource, error, not_available},
-	     ?log_debug("resource not available after timeout, ~p informed", 
+	     ?debug("resource not available after timeout, ~p informed", 
 			[Pid]),
 	     NewResources = unsupervise(Resource, Resources),
 	     Ctx#ctx {waiting = NewWaiting, 
@@ -295,22 +295,22 @@ handle_down({'DOWN', Mon, process, Pid, Reason},
 		      available = Avail}) ->
     case dict:find(Mon, Resources) of
 	{ok, Resource} ->
-	    ?log_debug("removing resource ~p", [Resource]),
+	    ?debug("removing resource ~p", [Resource]),
 	    check_if_normal(Reason, Pid),
 	    NewResources = dict:erase(Resource, dict:erase(Mon, Resources)),
 	    case lists:keytake(Resource, 1, Waiting) of
 		{value, {Resource, Timer}, Rest} ->
-		    ?log_debug("resource ~p was waiting", [Resource]),
+		    ?debug("resource ~p was waiting", [Resource]),
 		    erlang:cancel_timer(Timer),
 		    Ctx#ctx{resources = NewResources, waiting = Rest};
 		false ->
-		    ?log_debug("resource ~p was active", [Resource]),
+		    ?debug("resource ~p was active", [Resource]),
 		    handle_waiting(Waiting,
 				   Ctx#ctx{resources = NewResources, 
 					   available = Avail + 1})
 	    end;
 	_Other ->
-	    ?log_debug("down received for unknown resource ~p", [Pid]),
+	    ?debug("down received for unknown resource ~p", [Pid]),
 	    Ctx
     end.
 
@@ -321,21 +321,21 @@ check_if_normal(shutdown, _Pid) ->
 check_if_normal(killed, _Pid) ->
     ok;
 check_if_normal(_Reason, _Pid) ->
-    ?log_warning("resource ~p DOWN, reason ~p",  [_Pid, _Reason]).
+    ?warning("resource ~p DOWN, reason ~p",  [_Pid, _Reason]).
 
 supervise({Pid, _Ref} = Resource, Resources) ->
-    ?log_debug("monitor resource ~p", [Resource]),
+    ?debug("monitor resource ~p", [Resource]),
     Mon = erlang:monitor(process, Pid),
     dict:store(Resource, Mon, dict:store(Mon, Resource, Resources)).
 
 unsupervise(Resource, Resources) ->
     case dict:find(Resource, Resources) of
 	{ok, Mon} ->
-	    ?log_debug("demonitor resource ~p", [Resource]),
+	    ?debug("demonitor resource ~p", [Resource]),
 	    erlang:demonitor(Mon),
 	    dict:erase(Resource, dict:erase(Mon, Resources));
 	error ->
-	    ?log_warning("unsupervised resource ~p", [Resource]),
+	    ?warning("unsupervised resource ~p", [Resource]),
 	    Resources
     end.
 

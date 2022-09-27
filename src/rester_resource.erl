@@ -200,7 +200,7 @@ calc_avail() ->
 	    min(MaxPorts - ReservedPorts, 
 		MaxFds - ReservedFds - length(ErlangFds));
 	{error, _Reason} = E ->
-	    ?log_debug("calc_avail failed, reason ~p",[_Reason]),
+	    ?debug("calc_avail failed, reason ~p",[_Reason]),
 	    E
     end.
 
@@ -237,6 +237,6 @@ ulimit_fds() ->
 		error:_ ->   {error, list_to_integer_failed}
 	    end;
 	_Other ->
-	    ?log_error("ulimit result ~p",[_Other]),
+	    ?error("ulimit result ~p",[_Other]),
 	    {error, ulimit_failed}
     end.

@@ -350,6 +350,7 @@ xrequest(Proxy,Port,Req,Body,Timeout) ->
     case rester_socket_cache:open(Proto,Req#http_request.version,
 			       Proxy,Port,Timeout) of
 	{ok,S} ->
+	    %% {nodelay,true}?
 	    rester_socket:setopts(S, [{mode,binary},{packet,http}]),
 	    case request(S, Req, Body, true, Timeout) of
 		{ok,Resp,RespBody} ->
@@ -371,16 +372,16 @@ request(S, Req, Body, Proxy, Timeout) ->
 	    %% FIXME: take care of POST 100-continue
 	    case recv_response(S, Timeout) of
 		{ok, Resp} ->
-		    ?log_debug("response: ~p", [Resp]),
+		    ?debug("response: ~p", [Resp]),
 		    case recv_body(S, Resp, Timeout) of
 			{ok,RespBody} ->
 			    {ok,Resp,RespBody};
 			Error ->
-			    ?log_debug("body: ~p", [Error]),
+			    ?debug("body: ~p", [Error]),
 			    Error
 		    end;
 		Error ->
-		    ?log_debug("response: ~p", [Error]),
+		    ?debug("response: ~p", [Error]),
 		    Error
 	    end;
 	Error -> Error
@@ -416,17 +417,17 @@ open(Request,Timeout) ->
 	    rester_socket:setopts(S, [{mode,binary},{packet,http}]),
 	    {ok,S};
 	Error ->
-	    ?log_debug("open failed, reason ~p",[Error]),
+	    ?debug("open failed, reason ~p",[Error]),
 	    Error
     end.
 
 close(S, Req, Resp) ->
     case do_close(Req,Resp) of
 	true ->
-	    ?log_debug("real close",[]),
+	    ?debug("real close",[]),
 	    rester_socket:close(S);
 	false ->
-	    ?log_debug("session close",[]),
+	    ?debug("session close",[]),
 	    rester_socket_cache:close(S)
     end.
 
@@ -489,7 +490,7 @@ send(Socket, Method, URI, Version, H, Body, Proxy) ->
 	 end,
     Request = [format_request(Method,Url,Version,Proxy),?CRNL,
 	       format_hdr(H3),?CRNL, Body],
-    ?log_debug("> ~p", [Request]),
+    ?debug("> ~p", [Request]),
     rester_socket:send(Socket, Request).
 
 %%
@@ -659,7 +660,7 @@ recv_body_eof(Socket,Timeout) ->
     end.
 
 recv_body_eof(Socket,Fun,Acc,Timeout) ->
-    ?log_debug("RECV_BODY_EOF: tmo=~w", [Timeout]),
+    ?debug("RECV_BODY_EOF: tmo=~w", [Timeout]),
     rester_socket:setopts(Socket, [{packet,raw},{mode,binary}]),
     recv_body_eof_(Socket,Fun,Acc,Timeout).
 
@@ -689,10 +690,10 @@ recv_body_data(Socket, Len, Timeout) ->
 
 %% read determined Content-Length content in chunks of ?MAX_RAW_CHUNK_SIZE
 recv_body_data(_Socket, 0, _Fun, Acc, _Timeout) ->
-    ?log_debug("RECV_BODY_DATA: len=0, tmo=~w", [_Timeout]),
+    ?debug("RECV_BODY_DATA: len=0, tmo=~w", [_Timeout]),
     {ok, Acc};
 recv_body_data(Socket, Len, Fun, Acc, Timeout) ->
-    ?log_debug("RECV_BODY_DATA: len=~p, tmo=~w", [Len,Timeout]),
+    ?debug("RECV_BODY_DATA: len=~p, tmo=~w", [Len,Timeout]),
     rester_socket:setopts(Socket, [{packet,raw},{mode,binary}]),
     recv_body_data_(Socket, Len, Fun, Acc, Timeout).
 
@@ -725,20 +726,20 @@ recv_body_chunks(Socket, Timeout) ->
 
 recv_body_chunks(Socket, Fun, Acc, Timeout) ->
     rester_socket:setopts(Socket, [{packet,line},{mode,list}]),
-    ?log_debug("RECV_BODY_CHUNKS: tmo=~w", [Timeout]),
+    ?debug("RECV_BODY_CHUNKS: tmo=~w", [Timeout]),
     recv_body_chunk(Socket, Fun, Acc, Timeout).
 
 recv_body_chunk(S, Fun, Acc, Timeout) ->
     case rester_socket:recv(S, 0, Timeout) of
 	{ok,Line} ->
-	    ?log_debug("CHUNK-Line: ~p", [Line]),
+	    ?debug("CHUNK-Line: ~p", [Line]),
 	    {ChunkSize,_Ext} = chunk_size(Line),
-	    ?log_debug("CHUNK: ~w", [ChunkSize]),
+	    ?debug("CHUNK: ~w", [ChunkSize]),
 	    if ChunkSize =:= 0 ->
 		    rester_socket:setopts(S, [{packet,httph}]),
 		    case recv_chunk_trailer(S, [], Timeout) of
 			{ok,_TR} ->
-			    ?log_debug("CHUNK TRAILER: ~p", [_TR]),
+			    ?debug("CHUNK TRAILER: ~p", [_TR]),
 			    rester_socket:setopts(S, [{packet,http},
 						   {mode,binary}]),
 			    {ok,Acc};
@@ -758,7 +759,7 @@ recv_body_chunk(S, Fun, Acc, Timeout) ->
 				    Acc1 = Fun(Bin,Acc),
 				    recv_body_chunk(S,Fun,Acc1,Timeout);
 				{ok, _Data} ->
-				    ?log_debug("out of sync ~p", [_Data]),
+				    ?debug("out of sync ~p", [_Data]),
 				    {error, sync_error};
 				Error ->
 				    Error
@@ -952,28 +953,28 @@ recv_hc(S, R, H, Timeout) ->
 	{ok, Hdr} ->
 	    case Hdr of
 		http_eoh ->
-		    ?log_debug("EOH <", []),
+		    ?debug("EOH <", []),
 		    Other = lists:reverse(H#http_chdr.other),
 		    H1 = H#http_chdr { other = Other },
 		    R1 = R#http_request { headers = H1 },
-		    ?log_debug("< ~s~s", [format_request(R1,true),
+		    ?debug("< ~s~s", [format_request(R1,true),
 				      format_headers(fmt_chdr(H1))]),
 		    {ok, R1};
 		{http_header,_,K,_,V} ->
-		    ?log_debug("HEADER < ~p ~p", [K, V]),
+		    ?debug("HEADER < ~p ~p", [K, V]),
 		    recv_hc(S,R,set_chdr(K,V,H), Timeout);
 		Got ->
-		    ?log_debug("HEADER ERROR ~p", [Got]),
+		    ?debug("HEADER ERROR ~p", [Got]),
 		    {error, Got}
 	    end;
 	{error, {http_error, ?CRNL}} ->
-	    ?log_debug("ERROR CRNL <", []),
+	    ?debug("ERROR CRNL <", []),
 	    recv_hc(S, R, H,Timeout);
 	{error, {http_error, ?NL}} ->
-	    ?log_debug("ERROR NL <", []),
+	    ?debug("ERROR NL <", []),
 	    recv_hc(S, R, H,Timeout);
 	Error ->
-	    ?log_debug("RECV ERROR ~p <", [Error]),
+	    ?debug("RECV ERROR ~p <", [Error]),
 	    Error
     end.
 
@@ -982,24 +983,24 @@ recv_hs(S, R, H, Timeout) ->
 	{ok, Hdr} ->
 	    case Hdr of
 		http_eoh ->
-		    ?log_debug("EOH <", []),
+		    ?debug("EOH <", []),
 		    Other = lists:reverse(H#http_shdr.other),
 		    H1 = H#http_shdr { other = Other },
 		    R1 = R#http_response { headers = H1 },
-		    ?log_debug("< ~s~s", [format_response(R1),
+		    ?debug("< ~s~s", [format_response(R1),
 				      format_hdr(H1)]),
 		    {ok, R1};
 		{http_header,_,K,_,V} ->
-		    ?log_debug("HEADER < ~p ~p", [K, V]),
+		    ?debug("HEADER < ~p ~p", [K, V]),
 		    recv_hs(S,R,set_shdr(K,V,H),Timeout);
 		Got ->
 		    {error, Got}
 	    end;
 	{error, {http_error, ?CRNL}} ->
-	    ?log_debug("ERROR CRNL <", []),
+	    ?debug("ERROR CRNL <", []),
 	    recv_hs(S, R, H,Timeout);
 	{error, {http_error, ?NL}} ->
-	    ?log_debug("ERROR NL <", []),
+	    ?debug("ERROR NL <", []),
 	    recv_hs(S, R, H, Timeout);
 	Error -> Error
     end.
@@ -1182,7 +1183,7 @@ trim_(Cs) -> Cs.
 
 accept_media(Request) ->
     Accept = (Request#http_request.headers)#http_chdr.accept,
-    ?log_debug("accept ~p", [Accept]),
+    ?debug("accept ~p", [Accept]),
     parse_accept(Accept).
 
 %% fixme: parse and return other media paramters, do proper handling of q
@@ -1198,7 +1199,7 @@ parse_accept([ [Media,"q="++QVal|_] | Types], Acc) ->
 	Q -> parse_accept(Types, [{Media, Q} | Acc])
     catch
 	error:_ ->
-	    ?log_error("bad q value ~p", [QVal]),
+	    ?error("bad q value ~p", [QVal]),
 	    parse_accept(Types, [{Media, 0.0} | Acc])
     end;
 parse_accept([ [Media|_] | Types], Acc) -> %% fixme
