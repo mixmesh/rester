@@ -118,23 +118,35 @@ connect(Host, Port, Protos=[tcp|_], Opts0, Timeout) -> %% tcp socket
     Packet = proplists:get_value(packet, TcpOpts, 0),
     {_, TcpOpts1} = split_options([active,packet,mode], TcpOpts),
     TcpConnectOpts = [{active,false},{packet,0},{mode,binary}|TcpOpts1],
+    Opts3 = add_hostname_opt(Host, Opts2),
     case gen_tcp:connect(Host, Port, TcpConnectOpts, Timeout) of
 	{ok, S} ->
 	    X =
 		#rester_socket { mdata   = gen_tcp,
-				mctl    = inet,
-				protocol = Protos,
-				transport = S,
-				socket   = S,
-				active   = Active,
-				mode     = Mode,
-				packet   = Packet,
-				opts     = Opts2,
-				tags     = {tcp,tcp_closed,tcp_error}
-			    },
+				 mctl    = inet,
+				 protocol = Protos,
+				 transport = S,
+				 socket   = S,
+				 active   = Active,
+				 mode     = Mode,
+				 packet   = Packet,
+				 opts     = Opts3,
+				 tags     = {tcp,tcp_closed,tcp_error}
+			       },
 	    connect_upgrade(X, tl(Protos), Timeout);
 	Error ->
 	    Error
+    end.
+
+%% add a hostname option to be used for server_name_indication
+add_hostname_opt(Host, Opts) ->
+    case inet:is_ip_address(Host) of
+	true -> Opts;
+	false ->
+	    case inet:parse_address(Host) of
+		{ok,_} ->  Opts;
+		_ -> [{hostname,Host}|Opts]
+	    end
     end.
 
 connect_upgrade(X, Protos0, Timeout) ->
@@ -148,15 +160,16 @@ connect_upgrade(X, Protos0, Timeout) ->
 	    ?debug("SSL upgrade, options = ~p", [SSLOpts]),
 	    ?debug("before ssl:connect opts=~p",
 		 [getopts(X, [active,packet,mode])]),
-	    case ssl_connect(X#rester_socket.socket, SSLOpts, Timeout) of
+	    SSLOpts1 = add_sni(X#rester_socket.opts, SSLOpts),
+	    case ssl_connect(X#rester_socket.socket, SSLOpts1, Timeout) of
 		{ok,S1} ->
 		    ?debug("ssl:connect opt=~p",
 			 [ssl:getopts(S1, [active,packet,mode])]),
 		    X1 = X#rester_socket { socket=S1,
-					  mdata = ssl,
-					  mctl  = ssl,
-					  opts=Opts1,
-					  tags={ssl,ssl_closed,ssl_error}},
+					   mdata = ssl,
+					   mctl  = ssl,
+					   opts  = Opts1,
+					   tags  = {ssl,ssl_closed,ssl_error}},
 		    connect_upgrade(X1, Protos1, Timeout);
 		Error={error,_Reason} ->
 		    ?warning("ssl:connect error=~w\n", [_Reason]),
@@ -175,6 +188,19 @@ connect_upgrade(X, Protos0, Timeout) ->
 		 [getopts(X, [active,packet,mode])]),
 	    {ok,X}
     end.
+
+add_sni(SockOpts, SSLOpts) ->
+    case lists:keyfind(hostname, 1, SockOpts) of
+	false -> SSLOpts;
+	{hostname, Host} ->
+	    case lists:keymember(server_name_indication, 1, SSLOpts) of
+		true ->
+		    SSLOpts;
+		false ->
+		    [{server_name_indication, Host}|SSLOpts]
+	    end
+    end.
+    
 
 ssl_connect(Socket, Options, Timeout) ->
     case ssl:connect(Socket, Options, Timeout) of
@@ -449,6 +475,7 @@ ssl_connect_opts() ->
      fail_if_no_peer_cert,
      depth, cert, certfile, key, keyfile,
      password, cacerts, cacertfile, dh, dhfile, cihpers,
+     server_name_indication, 
      debug].
 
 
