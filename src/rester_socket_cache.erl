@@ -79,7 +79,7 @@ open(Proto, Vsn, Host, Port, Timeout) ->
 		    {ok,HS};
 		{error,_} ->
 		    connect(IPs,Port,Proto,Vsn,
-			    [{active,false}],Timeout,undefined)
+			    [{active,false},{hostname,Host}],Timeout,undefined)
 	    end;
 	Error ->
 	    Error

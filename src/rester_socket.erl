@@ -118,9 +118,9 @@ connect(Host, Port, Protos=[tcp|_], Opts0, Timeout) -> %% tcp socket
     Packet = proplists:get_value(packet, TcpOpts, 0),
     {_, TcpOpts1} = split_options([active,packet,mode], TcpOpts),
     TcpConnectOpts = [{active,false},{packet,0},{mode,binary}|TcpOpts1],
-    Opts3 = add_hostname_opt(Host, Opts2),
     case gen_tcp:connect(Host, Port, TcpConnectOpts, Timeout) of
 	{ok, S} ->
+	    Opts3 = add_hostname_opt(Host, Opts2),
 	    X =
 		#rester_socket { mdata   = gen_tcp,
 				 mctl    = inet,
@@ -157,10 +157,11 @@ connect_upgrade(X, Protos0, Timeout) ->
 		application:get_env(rester, ssl_options, []),
 	    {SSLOpts0,Opts1} = split_options(ssl_connect_opts(),Opts),
 	    {_,SSLOpts} = split_options([ssl_imp], SSLOpts0),
+	    ?debug("X options = ~p", [X#rester_socket.opts]),	    
+	    SSLOpts1 = add_sni(X#rester_socket.opts, SSLOpts),
 	    ?debug("SSL upgrade, options = ~p", [SSLOpts]),
 	    ?debug("before ssl:connect opts=~p",
 		 [getopts(X, [active,packet,mode])]),
-	    SSLOpts1 = add_sni(X#rester_socket.opts, SSLOpts),
 	    case ssl_connect(X#rester_socket.socket, SSLOpts1, Timeout) of
 		{ok,S1} ->
 		    ?debug("ssl:connect opt=~p",
