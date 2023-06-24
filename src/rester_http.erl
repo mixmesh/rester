@@ -225,7 +225,8 @@ wpost_multi_body(Req, Data) ->
 	case string:str(Ct0, "boundary=") of
 	    0 ->
 		<<Rnd64:64>> = crypto:strong_rand_bytes(8),
-		Bnd = integer_to_list(Rnd64),
+		Bnd = "------------------------"++
+		    integer_to_list(Rnd64, 16),
 		Ct1 = H#http_chdr.content_type ++
 		    "; boundary=\""++Bnd ++"\"",
 		H1 = set_chdr('Content-Type', Ct1, H),
@@ -274,47 +275,40 @@ multi_data(Data, Boundary) ->
 	       [
 		"--",Boundary,?CRNL,
 		"Content-Type: text/plain",?CRNL,
-		"Content-Transfer-Encoding: 8bit",?CRNL,
+		%% "Content-Transfer-Encoding: 8bit",?CRNL,
 		?CRNL,
 		Bin,
 		?CRNL
 	       ];
-	  ({file,ContentType,FileName}) ->
+	  ({file,Name,ContentType,FileName}) ->
 	       {ok,Bin} = file:read_file(FileName),
 	       [
 		"--",Boundary,?CRNL,
+		"Content-Disposition: form-data",
+		"; name=","\"", Name, "\"",
+		"; filename=\"",filename:basename(FileName),"\"",?CRNL,
 		"Content-Type: ",ContentType,?CRNL,
-		"Content-Transfer-Encoding: 8bit",?CRNL,
+		%% "Content-Transfer-Encoding: 8bit",?CRNL,
 		?CRNL,
 		Bin,
 		?CRNL
 	       ];
-	  ({file,ContentType,DispositionName,FileName}) ->
-	       {ok,Bin} = file:read_file(FileName),
+	  ({data,Name,Value}) ->
 	       [
 		"--",Boundary,?CRNL,
-		"Content-Type: ",ContentType,?CRNL,
-		"Content-Disposition: filename=\"",DispositionName,"\"",?CRNL,
-		"Content-Transfer-Encoding: 8bit",?CRNL,
+		"Content-Disposition: form-data",
+		"; name=\"",Name,"\"",?CRNL,
 		?CRNL,
-		Bin,
+		Value,
 		?CRNL
 	       ];
-	  ({data,ContentType,DispositionName,Bin}) ->
+	  ({data,Name,ContentType,Bin}) ->
 	       [
 		"--",Boundary,?CRNL,
+		"Content-Disposition: form-data",
+		"; name=\"",Name,"\"",?CRNL,
 		"Content-Type: ",ContentType,?CRNL,
-		"Content-Disposition: filename=\"",DispositionName,"\"",?CRNL,
-		"Content-Transfer-Encoding: 8bit",?CRNL,
-		?CRNL,
-		Bin,
-		?CRNL
-	       ];
-	  ({data,ContentType,Bin}) ->
-	       [
-		"--",Boundary,?CRNL,
-		"Content-Type: ",ContentType,?CRNL,
-		"Content-Transfer-Encoding: 8bit",?CRNL,
+		%% "Content-Transfer-Encoding: 8bit",?CRNL,
 		?CRNL,
 		Bin,
 		?CRNL
@@ -490,7 +484,8 @@ send(Socket, Method, URI, Version, H, Body, Proxy) ->
 	 end,
     Request = [format_request(Method,Url,Version,Proxy),?CRNL,
 	       format_hdr(H3),?CRNL, Body],
-    ?debug("> ~p", [Request]),
+    ?debug("> ~s", [Request]),
+    %% io:format(">>> ~s", [Request]),
     rester_socket:send(Socket, Request).
 
 %%
