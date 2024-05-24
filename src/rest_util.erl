@@ -5,8 +5,8 @@
          header_match/3, if_match/2, if_unmodified_since/2, if_none_match/2,
          if_modified_since/2]).
 
--include_lib("apptools/include/log.hrl").
--include_lib("apptools/include/shorthand.hrl").
+%%-include_lib("apptools/include/log.hrl").
+%%-include_lib("apptools/include/shorthand.hrl").
 -include_lib("rester/include/rester.hrl").
 -include_lib("rester/include/rester_http.hrl").
 
@@ -20,7 +20,7 @@ parse_body(Request, Body) ->
     parse_body(Request, Body, []).
 
 parse_body(Request, Body, Options) ->
-    ?dbg_log_fmt("body ~p", [Body]),
+    ?debug("body ~p", [Body]),
     case try_parse_body(Request, Body, Options) of
 	{ok, Data} ->
             parse_data(Data);
@@ -49,7 +49,7 @@ parse_data(Request, Body, Options) when is_binary(Body)->
     parse_data(Request, binary_to_list(Body), Options);
 parse_data(Request, Body, Options) ->
     Type = (Request#http_request.headers)#http_chdr.content_type,
-    ?dbg_log_fmt("type ~p, body ~p", [Type, Body]),
+    ?debug("type ~p, body ~p", [Type, Body]),
     case string:split(Type, ";") of
 	["*/*"|_] -> %% Accept?
 	    {ok,parse_data(Body)};
@@ -62,7 +62,7 @@ parse_data(Request, Body, Options) ->
         ["multipart/form-data", "boundary="++ _, _] ->
             {ok,Body};
         _ ->
-	    ?dbg_log_fmt("type: ~p~n", [Type]),
+	    ?debug("type: ~p~n", [Type]),
 	    {error, "Unknown content type"}
     end.
 
@@ -106,7 +106,7 @@ parse_json_params(JsonTerm, Params) ->
 parse_json_params([], [], Acc) ->
     lists:reverse(Acc);
 parse_json_params([{Name, _Value}|_], [], _Acc) ->
-    throw({error, ?l2b(io_lib:format("~s not expected", [Name]))});
+    throw({error, list_to_binary(io_lib:format("~s not expected", [Name]))});
 parse_json_params(_JsonTerm, [], _Acc) ->
     throw({error, <<"Invalid parameters">>});
 parse_json_params(JsonTerm, [{Name, CheckType}|Rest], Acc) ->
@@ -116,10 +116,10 @@ parse_json_params(JsonTerm, [{Name, CheckType}|Rest], Acc) ->
                 true ->
                     parse_json_params(RemainingJsonTerm, Rest, [Value|Acc]);
                 false ->
-                    throw({error, ?l2b(io_lib:format("~s has bad type", [Name]))})
+                    throw({error, list_to_binary(io_lib:format("~s has bad type", [Name]))})
             end;
         false ->
-            throw({error, ?l2b(io_lib:format("~s is missing", [Name]))})
+            throw({error, list_to_binary(io_lib:format("~s is missing", [Name]))})
     end;
 parse_json_params(JsonTerm, [{Name, CheckType, DefaultValue}|Rest], Acc) ->
     case lists:keytake(Name, 1, JsonTerm) of
@@ -128,7 +128,7 @@ parse_json_params(JsonTerm, [{Name, CheckType, DefaultValue}|Rest], Acc) ->
                 true ->
                     parse_json_params(RemainingJsonTerm, Rest, [Value|Acc]);
                 false ->
-                    throw({error, ?l2b(io_lib:format("~s has bad type", [Name]))})
+                    throw({error, list_to_binary(io_lib:format("~s has bad type", [Name]))})
             end;
         false ->
             parse_json_params(JsonTerm, Rest, [DefaultValue|Acc])
@@ -326,7 +326,7 @@ response(Socket,Request,{error, internal_error, ErrorMsg})
                                   ErrorMsg,[]);
 response(Socket,Request,{error, Reason, ErrorMsg})
   when is_list(ErrorMsg) ->
-    ?dbg_log_fmt("can not handle error ~p:~p", [Reason, ErrorMsg]),
+    ?debug("can not handle error ~p:~p", [Reason, ErrorMsg]),
     rester_http_server:response_r(Socket,Request,500,"Internal Server Error",
                                   ErrorMsg,[]);
 response(Socket,Request,{error, Reason})
@@ -401,7 +401,7 @@ access(Socket) ->
 			    undefined -> undefined
 			end,
 	    SockName = rester_socket:sockname(Socket),
-	    ?dbg_log_fmt("SockName ~p, xylan port ~p",[SockName, XylanPort]),
+	    ?debug("SockName ~p, xylan port ~p",[SockName, XylanPort]),
 	    case SockName of
 		{ok, XylanPort} -> remote;
 		{ok, {{127,0,0,1}, _Port}} -> local;
