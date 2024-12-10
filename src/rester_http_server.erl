@@ -26,6 +26,43 @@
 
 -define(SEND_FILE_SEND_SIZE, 8192).
 
+-type socket() :: #rester_socket{}.
+-type ustate() :: term().
+
+-record(cb,
+	{
+	 init ::
+	   fun ((Socket::socket(),Options::[{Key::atom(),Value::term()}]) ->
+		       UState::ustate()),
+	 data ::
+	   fun ((Socket::socket(),Data::term(),RState::ustate()) -> 
+		       {ok,UState::ustate()} |
+		       {stop,{error,Reason::term()},UState::ustate()}),
+	 info ::
+	   fun ((Socket::socket(),Info::term(),UState::ustate()) ->
+		       {ok, UState1::ustate()} |
+		       {stop, {error, Reason::term()}, UState1::ustate()}),
+	 close ::
+	   fun ((Socket::socket(), UState::ustate()) -> 
+		       {ok, UState1::ustate()}),
+	 error ::
+	   fun ((Socket::socket(), Error::term(), UState::ustate()) -> 
+		   {stop, {error, Reason::term()}, UState1::ustate()}),
+	 control ::
+	   fun ((Socket::socket(), Request::term(), From::term(),
+		 UState::ustate()) ->
+		       {ignore, UState1::ustate()}),
+	 http_request ::
+	   fun ((Socket::socket(), Request::term(), Body::term(), UState::ustate()) ->
+		       {ok, UState1::ustate()} |
+		       {stop, {error, Reason::term()}, UState1::ustate()}),
+	 creds ::
+	   fun ((Socket::socket(), Request::term(), Body::term(), 
+		 UState::ustate()) ->
+		       {ok, UState1::ustate()} |
+		       {stop, {error, Reason::term()}, UState1::ustate()})
+	}).
+
 -record(state,
 	{
 	  request,
@@ -33,9 +70,14 @@
 	  authorized = false :: boolean(),
 	  private_key = "" :: string(),
 	  access = [] :: [access()],
+	  request_module :: undefined | atom(),
 	  request_handler,
+	  request_state :: undefined | term(),
+	  request_cb :: #cb{},
           neighbour_workers :: [{atom(), pid()}]
 	}).
+
+-type state() ::  #state{}.
 
 %% configurable start
 -export([start/2,
@@ -53,8 +95,9 @@
 
 %% for testing
 -export([test/0, test/1]).
+-export([test_cb/0, test_cb/1]).
 -export([handle_http_request/3]).
-
+-export([exported_info/3]).
 %%-----------------------------------------------------------------------------
 %% @doc
 %%  Starts a socket server on port Port with server options ServerOpts
@@ -90,20 +133,31 @@ start_link(Port, Options) ->
 
 do_start(Start, Port, Options) ->
     ?debug("~w: port ~p, server options ~p", [Start, Port, Options]),
-    {SessionOptions,Options1} =
-	rester_lib:split_options([request_handler,access,private_key,idle_timeout],
-			      Options),
-    %%Dir = code:priv_dir(rester),
-    Access = proplists:get_value(access, Options, []),
+    SessionKeys = [request_handler, request_module,
+		   access,
+		   private_key,
+		   neighbour_workers,
+		   idle_timeout,
+		   %% individual callbacks (optional)
+		   init,data,info,close,error,control,
+		   http_request,creds],
+
+    {SessionOptions,ServerOptions} =
+	rester_lib:split_options(SessionKeys, Options),
+    %% Dir = code:priv_dir(rester),
+    %% io:format("SessionOptions: ~p~n", [SessionOptions]),
+    %% io:format("ServerOptions: ~p~n", [ServerOptions]),
+
+    Access = proplists:get_value(access, SessionOptions, []),
     case rester_lib:validate_access(Access) of
 	ok ->
 	    rester_socket_server:Start(Port,
-				       [tcp,probe_ssl,http],
+				       [tcp,http],
 				       [{active,once},{reuseaddr,true},
 					{verify, verify_none}
 					%% {keyfile, filename:join(Dir, "host.key")},
 					%% {certfile, filename:join(Dir, "host.cert")}
-				       | Options1],
+				       | ServerOptions],
 				       ?MODULE, SessionOptions);
 	E -> E
     end.
@@ -126,9 +180,9 @@ stop(Pid) ->
 %%
 %% @end
 %%-----------------------------------------------------------------------------
--spec init(Socket::#rester_socket{},
+-spec init(Socket::socket(),
 	   ServerOptions::list({Option::atom(), Value::term()})) ->
-		  {ok, State::#state{}}.
+		  {ok, State::state()}.
 
 init(Socket, Options) ->
     ?debug("connection on: ~p ", [Socket]),
@@ -139,9 +193,16 @@ init(Socket, Options) ->
     %% rester_socket:setopts(Socket, [{nodelay,true}]),
     Access = proplists:get_value(access, Options, []),
     RH = proplists:get_value(request_handler, Options, undefined),
+    Module = proplists:get_value(request_module, Options, undefined),
+    RCb = load_callbacks(Module, #cb{}, Options),
     PrivateKey = proplists:get_value(private_key, Options, ""),
     NeighbourWorkers = proplists:get_value(neighbour_workers, Options, undefined),
-    {ok, #state{access = Access, private_key=PrivateKey, request_handler = RH, neighbour_workers = NeighbourWorkers}}.
+    S0 = #state{request_module = RH,
+		request_cb = RCb,
+		request_state = #{} },
+    S1 = cb(init, [Socket,Options], S0),
+    {ok, S1#state{access = Access, private_key=PrivateKey, 
+		  neighbour_workers = NeighbourWorkers}}.
 
 %% To avoid a compiler warning. Should we actually support something here?
 %%-----------------------------------------------------------------------------
@@ -150,9 +211,9 @@ init(Socket, Options) ->
 %%
 %% @end
 %%-----------------------------------------------------------------------------
--spec control(Socket::#rester_socket{},
-	      Request::term(), From::term(), State::#state{}) ->
-		     {ignore, State::#state{}}.
+-spec control(Socket::socket(),
+	      Request::term(), From::term(), State::state()) ->
+		     {ignore, State::state()}.
 
 control(_Socket, _Request, _From, State) ->
     {ignore, State}.
@@ -163,11 +224,11 @@ control(_Socket, _Request, _From, State) ->
 %%
 %% @end
 %%-----------------------------------------------------------------------------
--spec data(Socket::#rester_socket{},
+-spec data(Socket::socket(),
 	   Data::term(),
-	   State::#state{}) ->
-		  {ok, NewState::#state{}} |
-		  {stop, {error, Reason::term()}, NewState::#state{}}.
+	   State::state()) ->
+		  {ok, NewState::state()} |
+		  {stop, {error, Reason::term()}, NewState::state()}.
 
 data(Socket, Data, State) ->
     ?debug("~w: data = ~w", [self(),Data]),
@@ -198,15 +259,15 @@ data(Socket, Data, State) ->
 %%
 %% @end
 %%-----------------------------------------------------------------------------
--spec info(Socket::#rester_socket{},
+-spec info(Socket::socket(),
 	   Info::term(),
-	   State::#state{}) ->
-		  {ok, NewState::#state{}} |
-		  {stop, {error, Reason::term()}, NewState::#state{}}.
+	   State::state()) ->
+	  {ok, NewState::state()} |
+	  {stop, {error, Reason::term()}, NewState::state()}.
 
-info(_Socket, Info, State) ->
+info(Socket, Info, State) ->
     ?debug("~w: info = ~w", [self(),Info]),
-    {ok,State}.
+    cb(info, [Socket,Info], State).
 
 %%-----------------------------------------------------------------------------
 %% @doc
@@ -214,13 +275,13 @@ info(_Socket, Info, State) ->
 %%
 %% @end
 %%-----------------------------------------------------------------------------
--spec close(Socket::#rester_socket{},
-	    State::#state{}) ->
-		   {ok, NewState::#state{}}.
+-spec close(Socket::socket(),
+	    State::state()) ->
+		   {ok, NewState::state()}.
 
-close(_Socket, State) ->
+close(Socket, State) ->
     ?debug("close"),
-    {ok,State}.
+    cb(close, [Socket], State).
 
 %%-----------------------------------------------------------------------------
 %% @doc
@@ -229,14 +290,14 @@ close(_Socket, State) ->
 %%
 %% @end
 %%-----------------------------------------------------------------------------
--spec error(Socket::#rester_socket{},
+-spec error(Socket::socket(),
 	    Error::term(),
-	    State::#state{}) ->
-		   {stop, {error, Reason::term()}, NewState::#state{}}.
+	    State::state()) ->
+		   {stop, {error, Reason::term()}, NewState::state()}.
 
-error(_Socket,Error,State) ->
+error(Socket,Error,State) ->
     ?debug("error = ~p", [Error]),
-    {stop, Error, State}.
+    cb(error, [Socket,Error], State).
 
 
 handle_request(Socket, R, State) ->
@@ -410,15 +471,20 @@ unq_([]) -> [].
 handle_body(Socket, Request, Body, State) ->
     RH = State#state.request_handler,
     ?debug("calling ~p with -BODY:\n~p\n-END-BODY", [RH, Body]),
-    {M, F, As} = request_handler(RH, Socket, Request, Body, State),
-    try apply(M, F, As) of
-	ok -> {ok, State};
-	stop -> {stop, normal, State};
-	{error, Error} ->  {stop, Error, State}
-    catch error:_E ->
-	    ?error("call to request_handler ~p failed, reason ~p",
-			[RH, _E]),
-	    {stop, internal_error, State}
+    case (State#state.request_cb)#cb.http_request of
+	undefined ->
+	    {M, F, As} = request_handler(RH, Socket, Request, Body, State),
+	    try apply(M, F, As) of
+		ok -> {ok, State};
+		stop -> {stop, normal, State};
+		{error, Error} ->  {stop, Error, State}
+	    catch error:_E ->
+		    ?error("call to request_handler ~p failed, reason ~p",
+			   [RH, _E]),
+		    {stop, internal_error, State}
+	    end;
+	_HttpRequest ->
+	    cb(http_request, [Socket, Request, Body], State)
     end.
 
 %% @private
@@ -440,7 +506,7 @@ request_handler({Module, Function, XArgs}, Socket, Request, Body, _State) ->
 %%
 %% @end
 %%-----------------------------------------------------------------------------
--spec response(Socket::#rester_socket{},
+-spec response(Socket::socket(),
 	       Connection::string() | undefined,
 	       Status::integer(),
 	       Phrase::string(),
@@ -455,7 +521,7 @@ response(S, Connection, Status, Phrase, Body) ->
 %%
 %% @end
 %%-----------------------------------------------------------------------------
--spec response(Socket::#rester_socket{},
+-spec response(Socket::socket(),
 	       Connection::string() | undefined,
 	       Status::integer(),
 	       Phrase::string(),
@@ -669,6 +735,167 @@ handle_http_request(Socket, Request, Body) ->
 	    ok
     end.
 
+load_callbacks(undefined, RHb, Options) ->
+    load_exports(undefined, [], RHb, Options);
+load_callbacks(Module, RHb, Options) when is_atom(Module) ->
+    Exports = load_module(Module),
+    load_exports(Module, Exports, RHb, Options).
+
+
+load_exports(Module, Exports, RHb, Options) ->
+    Init = load_cb(Module, init, 2, Exports, Options),
+    Data = load_cb(Module, data, 3, Exports, Options),
+    Info = load_cb(Module, info, 3, Exports, Options),
+    Close = load_cb(Module, close, 2, Exports, Options),
+    Error = load_cb(Module, error, 3, Exports, Options),
+    Control = load_cb(Module, control, 4, Exports, Options),
+    HttpRequest = load_cb(Module, http_request, 4, Exports, Options),
+    Creds = load_cb(Module, creds, 4, Exports, Options),
+    RHb#cb{init = Init,
+	   data = Data,
+	   info = Info,
+	   close = Close,
+	   error = Error,
+	   control = Control,
+	   http_request = HttpRequest,
+	   creds = Creds
+	  }.
+
+load_cb(Module, Function, Arity, Exports, Options) ->
+    case proplists:get_value(Function, Options, undefined) of
+	undefined ->
+	    case lists:member({Function,Arity},Exports) of
+		true ->
+		    fun Module:Function/Arity;
+		false ->
+		    ?debug("function ~s:~s/~w not exported",
+			   [ Module, Function, Arity]),
+		    undefined
+	    end;
+	Function1 when is_atom(Function1) ->
+	    case lists:member({Function1,Arity},Exports) of
+		true ->
+		    fun Module:Function1/Arity;
+		false ->
+		    ?debug("function ~s:~s/~w not exported",
+			   [ Module, Function1, Arity]),
+		    undefined
+	    end;
+	{Module1,Function1} when is_atom(Module1), is_atom(Function1) ->
+	    Exports1 = load_module(Module1),
+	    case lists:member({Function1,Arity},Exports1) of
+		true ->
+		    fun Module1:Function1/Arity;
+		false ->
+		    ?debug("function ~s:~s/~w not exported",
+			   [Module1, Function1, Arity]),
+		    undefined
+	    end;
+	Fun when is_function(Fun,Arity) ->
+	    Fun
+    end.
+
+load_module(Module) ->
+    try code:ensure_loaded(Module) of
+	{module, Module} ->
+	    Module:module_info(exports);
+	{error, nofile} ->
+	    ?debug("loading module ~p failed, reason ~p", [Module, nofile]),
+	    []
+    catch
+	error:Reason ->
+	    ?debug("loading module ~p failed, reason ~p", [Module, Reason]),
+	    []
+    end.
+    
+
+%% Callbacks
+cb(init, [Socket,Options], State) ->
+    case (State#state.request_cb)#cb.init of
+	undefined ->
+	    State#state { request_state = #{}};  %% dummy state
+	Cb ->
+	    try Cb(Socket, Options) of
+		{ok, RState} ->
+		    State#state { request_state = RState }
+	    catch
+		error:_ ->
+		    State#state { request_state = #{}}  %% dummy state
+	    end
+    end;
+cb(info, [Socket,Info], State) ->
+    case (State#state.request_cb)#cb.info of
+	undefined -> 
+	    {ok,State};
+	Cb ->
+	    RState = State#state.request_state,
+	    try Cb(Socket,Info,RState) of
+		{ok,RState1} ->
+		    {ok, State#state{request_state = RState1}};
+		{stop, Error, RCbState} ->
+		    {stop, Error, State#state{request_state = RCbState}}
+	    catch
+		error:Reason -> 
+		    %% fixme: log error
+		    {stop, Reason, State}
+	    end
+    end;
+cb(close, [Socket], State) ->
+    case (State#state.request_cb)#cb.close of
+	undefined ->
+	    {ok,State};
+	Cb ->
+	    RState = State#state.request_state,
+	    try Cb(Socket, RState) of
+		{ok,RState1} ->
+		    {ok, State#state{request_state = RState1}}
+	    catch
+		error:_Reason -> 
+		    %% fixme: log error
+		    {ok, State}
+	    end
+    end;
+cb(error, [Socket,Error], State) ->
+    case (State#state.request_cb)#cb.close of
+	undefined ->
+	    {ok,State};
+	Cb ->
+	    RState = State#state.request_state,
+	    try Cb(Socket,Error,RState) of
+		{stop,Error,RState1} ->
+		    {stop,Error,State#state{request_state = RState1}}
+	    catch
+		error:_Reason -> 
+		    %% fixme: log error
+		    {ok, State}
+	    end
+    end;
+cb(http_request, [Socket, Request, Body], State) ->
+    case (State#state.request_cb)#cb.http_request of
+	false ->
+	    {ok, State};
+	Cb ->
+	    RState = State#state.request_state,
+	    try Cb(Socket, Request, Body, RState) of
+		ok -> 
+		    {ok, State};
+		{ok, RState1} ->
+		    {ok, State#state{request_state = RState1}};
+		stop ->
+		    {stop, normal, State};
+		{stop, Error, RState1} ->
+		    {stop, Error, State#state{request_state = RState1}};
+		{error, Error} ->
+		    {stop, Error, State}
+	    catch
+		error:Reason ->
+		    ?error("call to request_handler ~p failed, reason ~p",
+			   [{State#state.request_module,handle_http_request,4},
+			    Reason]),
+		    {stop, internal_error, State}
+	    end
+    end.
+
 %%-----------------------------------------------------------------------------
 test() ->
     %% Access = [],
@@ -699,9 +926,53 @@ test(new) ->
     test(Access);
 test(Access) ->
     Dir = code:priv_dir(rester),
+    rester:start(),
     rester_socket_server:start(9000, [tcp,probe_ssl,http],
-			    [{active,once},{reuseaddr,true},
-			     {verify, verify_none},
-			     {keyfile, filename:join(Dir, "host.key")},
-			     {certfile, filename:join(Dir, "host.cert")}],
-			    ?MODULE, [{access,Access}]).
+			       [{active,once},{reuseaddr,true},
+				{verify, verify_none},
+				{keyfile, filename:join(Dir, "host.key")},
+				{certfile, filename:join(Dir, "host.cert")}],
+			       ?MODULE, [{access,Access}]).
+
+test_cb() ->
+    test_cb(8888).
+
+test_cb(Port) when is_integer(Port), Port >= 1, Port =< 65535 ->
+    Callbacks = [
+		 {init, fun (_Socket, _Options) ->
+				io:format("INIT ~w\n", [self()]),
+				self() ! test_info,
+				{ok, #{}}
+			end},
+
+		 {data, fun (_Socket, _Data, State) ->
+				io:format("DATA ~p\n", [_Data]),
+				{ok, State}
+			end},
+
+		 {info, {?MODULE,exported_info}},
+
+		 {close, fun local_close/2},
+ 
+		 {error, fun (_Socket, _Error, State) ->
+				 io:format("ERROR ~p\n", [_Error]),
+				 {stop, normal, State}
+			 end},
+
+		 {http_request, fun (_Socket, _Request, _Body, State) ->
+					io:format("HTTP(~w) ~p\n", 
+						  [self(),_Request]),
+					handle_http_request(_Socket, _Request, _Body),
+					{ok, State}
+				end}
+		],
+    rester:start(),
+    rester_http_server:start(Port, [{access,[]} | Callbacks]).
+
+local_close(_Socket, State) ->
+    io:format("CLOSE\n"),
+    {ok, State}.
+
+exported_info(_Socket, _Info, State) ->
+    io:format("INFO ~p\n", [_Info]),
+    {ok, State}.

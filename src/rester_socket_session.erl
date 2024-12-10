@@ -120,8 +120,9 @@ handle_call(Request, From,
 
 control_reply({data, Data, MSt}, _, State) ->
     %% This case is when data has come from an external source
-    %% that needs an additonal ok reply
-    case handle_socket_data(Data, data, State#state{state = MSt}) of
+    %% that needs an additonal ok reply.
+    %% FIXME: check active handling here!!!
+    case handle_socket_data(Data, State#state{state = MSt}) of
 	{noreply, NewState} -> {reply, ok, NewState};
 	Other -> Other
     end;
@@ -222,7 +223,11 @@ handle_info({Tag,Socket,Data0},State=#state {socket = S}) when
       Socket =:= S#rester_socket.socket ->
     ?debug("got data ~p\n", [{Tag,Socket,Data0}]),
     maybe_flow_control(S, use, 1), %% Count down
-    handle_socket_data(Data0, data, State);
+    try handle_socket_data(Data0, State)
+    catch error:_E ->
+	    ?debug("call failed, reason ~p\n", [_E]),
+	    ret({noreply, State})
+    end;
 handle_info({Tag,Socket}, State) when
       (Tag =:= tcp_closed orelse Tag =:= ssl_closed),
       Socket =:= (State#state.socket)#rester_socket.socket ->
@@ -252,7 +257,7 @@ handle_info({timeout, Ref, {active, Value}},
 
 handle_info(Info, State) ->
     ?debug("Got info: ~p\n", [Info]),
-    try handle_socket_data(Info, info, State)
+    try handle_socket_info(Info, State)
     catch error:_E ->
 	    ?debug("call failed, reason ~p\n", [_E]),
 	    ret({noreply, State})
@@ -307,10 +312,13 @@ ret({reply, R, S, T}) ->
 ret(R) ->
     R.
 
-handle_socket_data(Data, F, 
+%%
+%% Reply from data callback
+%%
+handle_socket_data(Data,
 		   State=#state {module = M, state = CSt0, socket = S}) ->
-    ?debug("call ~p:~p", [M,F]),
-    ModResult = apply(M, F, [S,Data,CSt0]),
+    ?debug("call ~p:~p", [M,data]),
+    ModResult = apply(M, data, [S,Data,CSt0]),
     ?debug("result ~p", [ModResult]),
     data_result(ModResult, State).
 
@@ -337,6 +345,23 @@ data_result({reply, Rep, CSt1}, State) ->
 	    %% huh?
 	    ret({noreply, State#state { state = CSt1, active_timer = TRef  }})
     end.
+
+
+%%
+%% Reply from info callback
+%%
+handle_socket_info(Data, State=#state {module = M, state = CSt0, socket = S}) ->
+    ?debug("call ~p:~p", [M,data]),
+    ModResult = apply(M, info, [S,Data,CSt0]),
+    ?debug("result ~p", [ModResult]),
+    info_result(ModResult, State).
+
+info_result({ok,CSt1}, State) ->
+    ret({noreply, State#state { state = CSt1 }});
+info_result({stop,Reason,CSt1}, State) ->
+    ?debug("stopping"),
+    {stop, Reason, State#state { state = CSt1 }}.
+
 
 send_next([{_From, Msg}|_], Socket) ->
     rester_socket:send(Socket, Msg);
