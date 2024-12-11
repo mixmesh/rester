@@ -67,19 +67,31 @@ parse_data(Request, Body, Options) ->
     end.
 
 parse_json_string(Data, Options) ->
-    case lists:keysearch(jsone_options, 1, Options) of
-        {value, {_, JsoneOptions}} ->
-            ok;
-        false ->
-            JsoneOptions = []
-    end,
-    try jsone:decode(iolist_to_binary(Data), JsoneOptions) of
-	Term ->
-            {ok, Term}
+    try json:decode(iolist_to_binary(Data)) of
+	JsonMap ->
+            {ok, munge_json(JsonMap, Options)}
     catch
-	error:Reason ->
+        error:Reason ->
 	    {error, Reason}
     end.
+
+munge_json(JsonMap, Options) ->
+    case lists:keysearch(json_options, 1, Options) of
+        {value, {_, JsonOptions}} ->
+            case lists:member(proplist, JsonOptions) of
+                true ->
+                    proplistify(JsonMap);
+                false ->
+                    JsonMap
+            end;
+        false ->
+            JsonMap
+    end.
+
+proplistify(#{}) ->
+    [{}];
+proplistify(JsonMap) ->
+    proplists:from_map(JsonMap).
 
 parse_data(B) when is_binary(B) ->
     B;
