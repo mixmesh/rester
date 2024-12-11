@@ -380,12 +380,7 @@ format_reply(Data,Request) ->
 -spec format_reply_json(Term::term()) -> binary().
 
 format_reply_json(Term) ->
-    jsone:encode(Term, [{float_format, [{decimals, 4}, compact]},
-                        {indent, 2},
-                        {object_key_type, value},
-                        {space, 1},
-                        native_forward_slash,
-                        undefined_as_null]).
+    json:encode(Term).
 
 -spec format_reply_text(Term::term()) ->
 	  TextReply::string().
