@@ -17,23 +17,6 @@
 -type action() :: accept | reject | {accept , list(cred())}.
 -type access() :: cred() | {guard(), action()}.
 
--ifdef(USE_APPTOOLS).
--include_lib("apptools/include/log.hrl").
-
--define(debug(F,A), ?dbg_log_fmt((F), (A))).
--define(debug(F),   ?dbg_log_fmt((F), [])).
-
--define(warning(F,A), ?daemon_log_tag_fmt(warning, (F), (A))).
--define(warning(F), ?daemon_log_tag_fmt(warning, (F), [])).
-
--define(info(F,A), ?daemon_log_tag_fmt(info, (F), (A))).
--define(info(F), ?daemon_log_tag_fmt(info, (F), [])).
-
--define(error(F,A), ?daemon_log_tag_fmt(error, (F), (A))).
--define(error(F), ?daemon_log_tag_fmt(error, (F), [])).
-
--else.
-
 -include_lib("kernel/include/logger.hrl").
 
 -define(debug(_Format), ?debug(_Format, [])).
@@ -47,7 +30,5 @@
 
 -define(error(_Format), ?error(_Format, [])).
 -define(error(_Format, _Args), ?LOG_ERROR(_Format, _Args)).
-
--endif.
 
 -endif.

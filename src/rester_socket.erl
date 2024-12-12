@@ -497,6 +497,7 @@ split_options(_Keys, [], List1, List2) ->
     {lists:reverse(List1), lists:reverse(List2)}.
 
 %% allow older erlang versions
+-compile({nowarn_removed, {ssl,ssl_accept,3}}). %% backward compatibility
 handshake(Socket, Opts, Timeout) ->
     try ssl:ssl_accept(Socket, Opts, Timeout) of
 	Result -> Result

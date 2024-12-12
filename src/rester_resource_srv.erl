@@ -38,8 +38,8 @@
 		  {ok, Ctx::#ctx{}} |
 		  {stop, Reason::term()}.
 
-init(Args) ->
-    %% ?log_debug("args = ~p,\n pid = ~p\n", [Args, self()]),
+init(_Args) ->
+    %% ?log_debug("args = ~p,\n pid = ~p\n", [_Args, self()]),
     case rester_resource:calc_avail() of
 	Avail when is_integer(Avail) ->
 	    {ok, #ctx {state = up, available = Avail, resources = dict:new()}};
