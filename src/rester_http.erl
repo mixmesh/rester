@@ -213,7 +213,7 @@ wpost_body(Req, Data) ->
     end.
 
 wpost_json_body(Req, Data) ->
-    {ok,Req,jsone:encode(Data)}.
+    {ok,Req,json:encode(Data)}.
 
 wpost_form_body(Req, Data) ->
     {ok,Req,format_query(Data)}.
@@ -563,7 +563,7 @@ recv_body(S, R) ->
     recv_body(S, R, infinity).
 
 recv_body(S, R, Timeout) ->
-    case recv_body(S, R, 
+    case recv_body(S, R,
 		   fun (Data, Acc) -> [Data|Acc] end,
 		   [], Timeout) of
 	{ok, Chunks} ->
@@ -636,7 +636,7 @@ recv_body(S, Response, Fun, Acc, Timeout)
 			"chunked" ->
 			    recv_body_chunks(S,Fun,Acc,Timeout)
 		    end;
-		Len -> 
+		Len ->
 		    recv_body_data(S,list_to_integer(Len),Fun,Acc,Timeout)
 	    end
     end.
@@ -646,7 +646,7 @@ recv_body_eof(Socket) ->
 
 recv_body_eof(Socket,Timeout) ->
     case recv_body_eof(Socket,
-		       fun(Data,Acc) -> [Data|Acc] end, 
+		       fun(Data,Acc) -> [Data|Acc] end,
 		       [], Timeout) of
 	{ok, Chunks} ->
 	    {ok,reversed_chunks_to_binary(Chunks)};
@@ -674,8 +674,8 @@ recv_body_data(Socket, Len) ->
     recv_body_data(Socket, Len, infinity).
 
 recv_body_data(Socket, Len, Timeout) ->
-    case recv_body_data(Socket, Len, 
-			fun(Data,Acc) -> [Data|Acc] end, 
+    case recv_body_data(Socket, Len,
+			fun(Data,Acc) -> [Data|Acc] end,
 			[], Timeout) of
 	{ok, Chunks} ->
 	    {ok,reversed_chunks_to_binary(Chunks)};
@@ -710,7 +710,7 @@ recv_body_chunks(Socket) ->
     recv_body_chunks(Socket, infinity).
 
 recv_body_chunks(Socket, Timeout) ->
-    case recv_body_chunks(Socket, 
+    case recv_body_chunks(Socket,
 			  fun(Chunk,Acc) -> [Chunk|Acc] end,
 			  [], Timeout) of
 	{ok, Chunks} ->
