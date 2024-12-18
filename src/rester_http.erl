@@ -369,6 +369,12 @@ request(S, Req, Body, Proxy, Timeout) ->
 		    ?debug("response: ~p", [Resp]),
 		    case recv_body(S, Resp, Timeout) of
 			{ok,RespBody} ->
+			    Reponse = [format_response(Resp),?CRNL,
+				       format_hdr(Resp#http_response.headers),
+				       ?CRNL,
+				       RespBody],
+			    %% io:format("\n<<<<<<<<<<~s",[Reponse]),
+			    %% io:format("\n>>>>>>>>>>\n", []),
 			    {ok,Resp,RespBody};
 			Error ->
 			    ?debug("body: ~p", [Error]),
@@ -472,7 +478,9 @@ send(Socket, Method, URI, Version, H, Body, Proxy) ->
 		 H1#http_chdr { content_length = size(Body) };
 	    is_list(Body), Body =/= [],
 	    H1#http_chdr.content_length =:= undefined ->
-		 H1#http_chdr { content_length = lists:flatlength(Body) };
+		 Len = iolist_size(Body),
+		 %% lists:flatlength(Body) is not correct (mixed binaries)
+		 H1#http_chdr { content_length = Len };
 	    true ->
 		 H1
 	 end,
@@ -485,7 +493,8 @@ send(Socket, Method, URI, Version, H, Body, Proxy) ->
     Request = [format_request(Method,Url,Version,Proxy),?CRNL,
 	       format_hdr(H3),?CRNL, Body],
     ?debug("> ~s", [Request]),
-    %% io:format(">>> ~s", [Request]),
+    %% io:format(">>>>>>>>>>\n~s", [Request]),
+    %% io:format("\n<<<<<<<<<<\n", []),
     rester_socket:send(Socket, Request).
 
 %%

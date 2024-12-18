@@ -152,7 +152,7 @@ do_start(Start, Port, Options) ->
     case rester_lib:validate_access(Access) of
 	ok ->
 	    rester_socket_server:Start(Port,
-				       [tcp,http],
+				       [tcp,probe_ssl,http],
 				       [{active,once},{reuseaddr,true},
 					{verify, verify_none}
 					%% {keyfile, filename:join(Dir, "host.key")},
