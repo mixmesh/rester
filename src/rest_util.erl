@@ -24,12 +24,6 @@ parse_body(Request, Body, Options) ->
     case try_parse_body(Request, Body, Options) of
 	{ok, Data} ->
             parse_data(Data);
-	[{"data", Data}] ->
-            parse_data(Data);
-	[{Data, true}] ->
-            parse_data(Data);  %% default is urlencoded
-	List when is_list(List) ->
-            List;
 	Error ->
             Error
     end.
@@ -75,7 +69,7 @@ parse_json_string(Data, Options) ->
 	    {error, Reason}
     end.
 
-munge_json(JsonMap, Options) ->
+munge_json(JsonMap, Options) when is_map(JsonMap) ->
     case lists:keysearch(json_options, 1, Options) of
         {value, {_, JsonOptions}} ->
             case lists:member(proplist, JsonOptions) of
@@ -88,10 +82,13 @@ munge_json(JsonMap, Options) ->
             JsonMap
     end.
 
-proplistify(#{}) ->
-    [{}];
 proplistify(JsonMap) ->
-    proplists:from_map(JsonMap).
+    case maps:size(JsonMap) of
+        0 ->
+            [{}];
+        _ ->
+            proplists:from_map(JsonMap)
+    end.
 
 parse_data(B) when is_binary(B) ->
     B;
@@ -251,120 +248,130 @@ if_modified_since(IfModifiedSince, Lmt) ->
 %%%-------------------------------------------------------------------
 %%% General response function
 %%%-------------------------------------------------------------------
-response(Socket,Request,ok)  ->
-    rester_http_server:response_r(Socket,Request,200,"OK","",[]);
-response(Socket,Request,ok_204)  ->
-    rester_http_server:response_r(Socket,Request,204,"OK","",[]);
-response(Socket,Request,{ok, String})
-  when is_list(String) ->
-    rester_http_server:response_r(Socket,Request,200,"OK",String,[]);
-response(Socket,Request,{ok, Atom})
-  when is_atom(Atom) ->
-    rester_http_server:response_r(Socket,Request,200,"OK",
-                                  atom_to_list(Atom),[]);
-response(Socket,Request,{ok, Bin})
-  when is_binary(Bin) ->
-    rester_http_server:response_r(Socket,Request,200,"OK",
-                                  Bin,[]);
-response(Socket,Request,{ok, String, json})
-  when is_list(String) ->
-    rester_http_server:response_r(Socket,Request,200,"OK",String,
-                                  [{content_type,"application/json"}]);
-response(Socket,Request,{ok, String, html})
-  when is_list(String) ->
-    rester_http_server:response_r(Socket,Request,200,"OK",String,
+
+%% 20x
+response(Socket, Request, ok)  ->
+    rester_http_server:response_r(Socket, Request, 200, "OK", "", []);
+response(Socket, Request, {ok, String}) when is_list(String) ->
+    rester_http_server:response_r(Socket, Request, 200, "OK", String, []);
+response(Socket,Request,{ok, Atom}) when is_atom(Atom) ->
+    rester_http_server:response_r(Socket, Request, 200, "OK",
+                                  atom_to_list(Atom), []);
+response(Socket,Request, {ok, Bin}) when is_binary(Bin) ->
+    rester_http_server:response_r(Socket,Request, 200, "OK", Bin, []);
+response(Socket,Request, {ok, String, json}) when is_list(String) ->
+    rester_http_server:response_r(Socket, Request, 200, "OK", String,
+                                  [{content_type, "application/json"}]);
+response(Socket,Request,{ok, String, html}) when is_list(String) ->
+    rester_http_server:response_r(Socket, Request, 200, "OK", String,
                                   [{content_type,"text/html"}]);
-response(Socket,Request,{ok, {format, Args}}) ->
-    {ContentType,Reply} = format_reply(Args, Request),
+response(Socket, Request, {ok, {format, Args}}) ->
+    {ContentType, Reply} = format_reply(Args, Request),
     rester_http_server:response_r(Socket, Request, 200, "OK", Reply,
-                                  [{content_type,ContentType}]);
-
-response(Socket,Request,{error, not_modified, ErrorMsg})
+                                  [{content_type, ContentType}]);
+response(Socket, Request, ok_201)  ->
+    rester_http_server:response_r(
+      Socket, Request, 201, "Created",
+      "The request was successful, and a new resource was created as a result",
+      []);
+response(Socket, Request, ok_204)  ->
+    rester_http_server:response_r(Socket, Request, 204, "OK", "No Content", []);
+%% 30x
+response(Socket, Request, {error, not_modified, ErrorMsg})
   when is_list(ErrorMsg) ->
-    rester_http_server:response_r(Socket,Request,304,"Not Modified",
-                                  ErrorMsg,[]);
-response(Socket,Request,{error, not_modified}) ->
-    rester_http_server:response_r(Socket,Request,304,"Not Modified",
-                                  "Object not modified",[]);
-%% Client errors
-response(Socket,Request,{error, bad_request, ErrorMsg})
+    rester_http_server:response_r(Socket, Request, 304, "Not Modified",
+                                  ErrorMsg, []);
+response(Socket,Request, {error, not_modified}) ->
+    rester_http_server:response_r(Socket,Request, 304, "Not Modified",
+                                  "Object not modified", []);
+%% 40x
+response(Socket, Request, {error, bad_request, ErrorMsg})
   when is_list(ErrorMsg) ->
-    rester_http_server:response_r(Socket,Request,400,"Bad Request",
-                                  ErrorMsg,[]);
-response(Socket,Request,{error, badarg}) ->
-    rester_http_server:response_r(Socket,Request,400,"Bad Request",
-                                  "Bad argument",[]);
-response(Socket,Request,{error, badarg, ErrMsg}) ->
-    rester_http_server:response_r(Socket,Request,400,"Bad Request",
-                                  ErrMsg,[]);
-response(Socket,Request,{error, not_implemented}) ->
-    rester_http_server:response_r(Socket,Request,400,"Bad Request",
-                                  "Not implemented",[]);
-response(Socket,Request,{error, not_applicable}) ->
-    rester_http_server:response_r(Socket,Request,400,"Bad Request",
-                                  "Not applicable",[]);
-response(Socket,Request,{error, {no_access, Body}}) ->
-    rester_http_server:response_r(Socket,Request,403,"Access Not Allowed",
-                                  Body, []);
-response(Socket,Request,{error, no_access}) ->
-    rester_http_server:response_r(Socket,Request,403,"Access Not Allowed",
-                                  "Access Not Allowed", []);
-response(Socket,Request,{error, not_found}) ->
-    rester_http_server:response_r(Socket,Request,404,"Not Found",
-                                  "Object not found",[]);
-response(Socket,Request,{error, enoent}) ->
-   rester_http_server:response_r(Socket,Request,404,"Not Found",
-                                 "Object not found",[]);
-response(Socket,Request,{error, unknown_event}) ->
-    rester_http_server:response_r(Socket,Request,404,"Not Found",
+    rester_http_server:response_r(Socket, Request, 400, "Bad Request",
+                                  ErrorMsg, []);
+response(Socket, Request, {error, badarg}) ->
+    rester_http_server:response_r(Socket, Request, 400, "Bad Request",
+                                  "Bad argument", []);
+response(Socket, Request, {error, badarg, ErrMsg}) ->
+    rester_http_server:response_r(Socket, Request, 400, "Bad Request",
+                                  ErrMsg, []);
+response(Socket, Request, {error, not_implemented}) ->
+    rester_http_server:response_r(Socket, Request, 400, "Bad Request",
+                                  "Not implemented", []);
+response(Socket, Request, {error, not_applicable}) ->
+    rester_http_server:response_r(Socket, Request, 400, "Bad Request",
+                                  "Not applicable", []);
+%% 401
+response(Socket, Request, {error, unauthorized, ErrorMsg})
+  when is_list(ErrorMsg) ->
+    rester_http_server:response_r(Socket, Request, 401, "Unauthorized",
+                                  ErrorMsg, []);
+response(Socket, Request, {error, unauthorized}) ->
+    rester_http_server:response_r(
+      Socket, Request, 401, "Unauthorized",
+      "Authentication is required and has failed or has not yet been provided",
+      []);
+response(Socket, Request, {error, {forbidden, Body}}) ->
+    rester_http_server:response_r(Socket, Request, 403, "Forbidden", Body, []);
+response(Socket, Request, {error, forbidden}) ->
+    rester_http_server:response_r(
+      Socket, Request, 403, "Forbidden",
+      "The server understood the request but refuses to authorize it", []);
+response(Socket, Request, {error, not_found}) ->
+    rester_http_server:response_r(Socket, Request, 404, "Not Found",
+                                  "The requested resource could not be found",
+                                  []);
+response(Socket, Request, {error, enoent}) ->
+    rester_http_server:response_r(
+      Socket, Request, 404, "Not Found",
+      "The file or directory you're asking for doesn't exist", []);
+response(Socket, Request, {error, unknown_event}) ->
+    rester_http_server:response_r(Socket, Request, 404, "Not Found",
                                   "Event not found",[]);
-response(Socket,Request,{error, not_allowed}) ->
-    rester_http_server:response_r(Socket,Request,405,"Method Not Allowed",
-                                  "Method Not Allowed",
-                                  [{<<"Allow">>, <<"GET,PUT,POST">>}]);
-response(Socket,Request,{error, precondition_failed}) ->
-    rester_http_server:response_r(Socket,Request,412,"Precondition Failed",
-                                  "Precondition Failed",[]);
-
-%% Application specific error codes
-response(Socket,Request,{error, unknown})  ->
-    rester_http_server:response_r(Socket,Request,534,"Data Missing","",[]);
-response(Socket,Request,{error, sleep_not_allowed})  ->
-    rester_http_server:response_r(Socket,Request,535,"Sleep not allowed","",[]);
-%% Internal errors
-response(Socket,Request,{error, internal_error, ErrorMsg})
+response(Socket, Request, {error, not_allowed}) ->
+    rester_http_server:response_r(
+      Socket, Request, 405, "Method Not Allowed",
+      "The HTTP method used is not supported for the resource",
+      [{<<"Allow">>, <<"GET,PUT,POST">>}]);
+response(Socket, Request, {error, timeout}) ->
+    rester_http_server:response_r(
+      Socket, Request, 408, "Request Timeout",
+      "The server timed out waiting for the request", []);
+response(Socket, Request, {error, precondition_failed}) ->
+    rester_http_server:response_r(
+      Socket, Request, 412, "Precondition Failed",
+      "One or more preconditions in the request headers were not met", []);
+%% 50x
+response(Socket, Request, {error, internal_error, ErrorMsg})
   when is_list(ErrorMsg)->
-    rester_http_server:response_r(Socket,Request,500,"Internal Server Error",
-                                  ErrorMsg,[]);
-response(Socket,Request,{error, Reason, ErrorMsg})
-  when is_list(ErrorMsg) ->
+    rester_http_server:response_r(Socket, Request, 500, "Internal Server Error",
+                                  ErrorMsg, []);
+response(Socket, Request, {error, Reason, ErrorMsg}) when is_list(ErrorMsg) ->
     ?debug("can not handle error ~p:~p", [Reason, ErrorMsg]),
-    rester_http_server:response_r(Socket,Request,500,"Internal Server Error",
-                                  ErrorMsg,[]);
-response(Socket,Request,{error, Reason})
-  when is_list(Reason)->
-    rester_http_server:response_r(Socket,Request,500,"Internal Server Error",
-                                  Reason,[]);
-response(Socket,Request,{error, Reason})
-  when is_atom(Reason)->
-    rester_http_server:response_r(Socket,Request,500,"Internal Server Error",
-                                  atom_to_list(Reason),[]);
-response(Socket,Request,{error, Reason}) ->
+    rester_http_server:response_r(Socket, Request, 500, "Internal Server Error",
+                                  ErrorMsg, []);
+response(Socket, Request, {error, Reason}) when is_list(Reason)->
+    rester_http_server:response_r(Socket, Request, 500, "Internal Server Error",
+                                  Reason, []);
+response(Socket,Request, {error, Reason}) when is_atom(Reason)->
+    rester_http_server:response_r(Socket, Request, 500, "Internal Server Error",
+                                  atom_to_list(Reason), []);
+response(Socket, Request, {error, Reason}) ->
     ?warning("can not handle error ~p", [Reason]),
-    rester_http_server:response_r(Socket,Request,500,"Internal Server Error",
-                                  "",[]);
-response(Socket,Request,{error, Reason, Format, Args})
+    rester_http_server:response_r(Socket, Request, 500, "Internal Server Error",
+                                  "", []);
+response(Socket, Request, {error, Reason, Format, Args})
   when is_list(Format), is_list(Args) ->
     ErrorMsg = io_lib:format(Format, Args),
-    response(Socket,Request,{error, Reason, ErrorMsg});
-response(Socket,Request,Other) ->
+    response(Socket, Request, {error, Reason, ErrorMsg});
+response(Socket, Request, Other) ->
     ?warning("can not handle result ~p", [Other]),
-    rester_http_server:response_r(Socket,Request,500,"Internal Server Error",
-                                  "",[]).
+    rester_http_server:response_r(Socket, Request, 500," Internal Server Error",
+                                  "", []).
 
 %%%-------------------------------------------------------------------
 
-format_reply(Data,Request) ->
+format_reply(Data, Request) ->
     case (Request#http_request.headers)#http_chdr.accept of
 	"application/json" ->
 	    {"application/json", format_reply_json(Data)};
