@@ -369,10 +369,10 @@ request(S, Req, Body, Proxy, Timeout) ->
 		    ?debug("response: ~p", [Resp]),
 		    case recv_body(S, Resp, Timeout) of
 			{ok,RespBody} ->
-                            Reponse = [format_response(Resp),?CRNL,
-                                       format_hdr(Resp#http_response.headers),
-                                       ?CRNL,
-                                       RespBody],
+                            %%Reponse = [format_response(Resp),?CRNL,
+                            %%           format_hdr(Resp#http_response.headers),
+                            %%           ?CRNL,
+                            %%           RespBody],
                             %% io:format("\n<<<<<<<<<<~s",[Reponse]),
                             %% io:format("\n>>>>>>>>>>\n", []),
                             {ok,Resp,RespBody};
@@ -600,7 +600,7 @@ recv_body(S, Request, Fun, Acc, Timeout)
                     case H#http_chdr.content_type of
                         "multipart/form-data; boundary=" ++ Boundary ->
                             recv_multipart_form_data(
-                              S, Timeout, list_to_binary(Boundary));
+                              S, H, Timeout, list_to_binary(Boundary));
                         _ ->
                             case H#http_chdr.content_length of
                                 undefined ->
@@ -658,7 +658,7 @@ recv_body_eof(Socket,Timeout) ->
 		       fun(Data,Acc) -> [Data|Acc] end,
 		       [], Timeout) of
 	{ok, Chunks} ->
-	    {ok,reversed_chunks_to_binary(Chunks)};
+	    {ok, reversed_chunks_to_binary(Chunks)};
 	Error ->
 	    Error
     end.
@@ -687,7 +687,7 @@ recv_body_data(Socket, Len, Timeout) ->
 			fun(Data,Acc) -> [Data|Acc] end,
 			[], Timeout) of
 	{ok, Chunks} ->
-	    {ok,reversed_chunks_to_binary(Chunks)};
+	    {ok, reversed_chunks_to_binary(Chunks)};
 	Error ->
 	    Error
     end.
@@ -797,14 +797,15 @@ reversed_chunks_to_binary(Chunks) ->
 
 %% "-----------------------------153796634513348781802793578094\r\nContent-Disposition: form-data; name=\"files[]\"; filename=\"FOO.txt\"\r\nContent-Type: text/plain\r\n\r\nBAR\n\r\n-----------------------------153796634513348781802793578094--\r\n"
 
-recv_multipart_form_data(Socket, Timeout, Boundary)->
+recv_multipart_form_data(Socket, OriginHeaders, Timeout, Boundary)->
     rester_socket:setopts(Socket, [{packet, raw}, {mode, binary}]),
     Separator = list_to_binary([<<"--">>, Boundary, <<"\r\n">>]),
     EndSeparator = list_to_binary([<<"--">>, Boundary, <<"--\r\n">>]),
-    recv_multipart_form_data(Socket, Timeout, Separator, EndSeparator, <<>>, []).
+    recv_multipart_form_data(Socket, OriginHeaders, Timeout, Separator,
+                             EndSeparator, <<>>, []).
 
 recv_multipart_form_data(
-  Socket, Timeout, Separator, EndSeparator, Buffer, Acc) ->
+  Socket, OriginHeaders, Timeout, Separator, EndSeparator, Buffer, Acc) ->
     SeparatorSize = size(Separator),
     BufferSize = size(Buffer),
     case binary:split(Buffer, Separator) of
@@ -813,27 +814,32 @@ recv_multipart_form_data(
                 {ok, Headers, StillRemainingBuffer} ->
                     case lists:keysearch(<<"Content-Type">>, 1, Headers) of
                         {value, _} ->
-%                        {value, {_, <<"application/octet-stream">>}} ->
-                            Filename =
-                                filename:join(
-                                  ["/tmp", "form-data-" ++
-                                       integer_to_list(
-                                         erlang:unique_integer([positive]))]),
-                            {ok, File} = file:open(Filename, [write, binary]),
+                            BaseDir =
+                                case application:get_env(
+                                       rester, multipart_path, undefined) of
+                                    undefined ->
+                                        "/tmp";
+                                    {M, F} ->
+                                        M:F(OriginHeaders)
+                                end,
+                            {ok, Filename} = multipart_filename(Headers),
+                            FilePath = filename:join(BaseDir, Filename),
+                            {ok, File} = file:open(FilePath, [write, binary]),
                             case recv_multipart_body(
                                    Socket, Timeout, Separator, EndSeparator,
                                    StillRemainingBuffer, File) of
                                 {separator, TrailingBuffer} ->
                                     file:close(File),
                                     recv_multipart_form_data(
-                                      Socket, Timeout, Separator, EndSeparator,
-                                      TrailingBuffer, [{file, Headers, Filename}|Acc]);
+                                      Socket, OriginHeaders, Timeout, Separator,
+                                      EndSeparator, TrailingBuffer,
+                                      [{file, Filename}|Acc]);
                                 end_separator ->
                                     file:close(File),
                                     rester_socket:setopts(
                                       Socket, [{packet, http}, {mode, binary}]),
                                     {ok, {multipart_form_data,
-                                          [{file, Headers, Filename}|Acc]}};
+                                          [{file, Filename}|Acc]}};
                                 {error, Reason} ->
                                     file:close(File),
                                     rester_socket:close(Socket),
@@ -845,13 +851,13 @@ recv_multipart_form_data(
                                    StillRemainingBuffer) of
                                 {separator, Data, TrailingBuffer} ->
                                     recv_multipart_form_data(
-                                      Socket, Timeout, Separator, EndSeparator,
-                                      TrailingBuffer, [{data, Headers, Data}|Acc]);
+                                      Socket, OriginHeaders, Timeout, Separator,
+                                      EndSeparator, TrailingBuffer,
+                                      [{data, Headers, Data}|Acc]);
                                 {end_separator, Data} ->
                                     rester_socket:setopts(
                                       Socket, [{packet, http}, {mode, binary}]),
-                                    {ok, {multipart_form_data,
-                                          [{data, Headers, Data}|Acc]}};
+                                    [{data, Headers, Data}|Acc];
                                 {error, Reason} ->
                                     rester_socket:close(Socket),
                                     {error, {bad_body, Reason}}
@@ -865,12 +871,30 @@ recv_multipart_form_data(
                 {ok, Data} ->
                     NewBuffer = list_to_binary([Buffer, Data]),
                     recv_multipart_form_data(
-                      Socket, Timeout, Separator, EndSeparator, NewBuffer, Acc);
+                      Socket, OriginHeaders, Timeout, Separator, EndSeparator,
+                      NewBuffer, Acc);
                 {error, Reason} ->
                     {error, Reason}
             end;
         [_] ->
             {error, bad_format}
+    end.
+
+multipart_filename(Headers) ->
+    LowercaseHeaders =
+        lists:map(fun({K, V}) -> {string:lowercase(K), V} end, Headers),
+    {_, ContentDisposition} =
+        lists:keyfind(<<"content-disposition">>, 1, LowercaseHeaders),
+    lookup_multiform_filename(string:lexemes(ContentDisposition, ";")).
+
+lookup_multiform_filename([]) ->
+    missing_filename;
+lookup_multiform_filename([Header|Rest]) ->
+    case string:trim(Header) of
+        <<"filename=", Filename/binary>> ->
+            {ok, string:trim(Filename, both, [$"])};
+        _ ->
+            lookup_multiform_filename(Rest)
     end.
 
 %% "-----------------------------153796634513348781802793578094\r\nContent-Disposition: form-data; name=\"files[]\"; filename=\"FOO.txt\"\r\nContent-Type: text/plain\r\n\r\nBAR\n\r\n-----------------------------153796634513348781802793578094--\r\n"
