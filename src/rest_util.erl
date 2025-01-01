@@ -60,34 +60,35 @@ parse_data(Request, Body, Options) ->
 	    {error, "Unknown content type"}
     end.
 
+
 parse_json_string(Data, Options) ->
     try json:decode(iolist_to_binary(Data)) of
-	JsonMap ->
-            {ok, munge_json(JsonMap, Options)}
+	JsonTerm ->
+            {ok, munge_json(JsonTerm, Options)}
     catch
         error:Reason ->
 	    {error, Reason}
     end.
 
-munge_json(JsonMap, Options) ->
+munge_json(JsonTerm, Options) ->
     case lists:keysearch(json_options, 1, Options) of
         {value, {_, JsonOptions}} ->
             case lists:member(proplist, JsonOptions) of
                 true ->
-                    proplistify(JsonMap);
+                    proplistify(JsonTerm);
                 false ->
-                    JsonMap
+                    JsonTerm
             end;
         false ->
-            JsonMap
+            JsonTerm
     end.
 
-proplistify(JsonMap) ->
-    case maps:size(JsonMap) of
+proplistify(JsonTerm) ->
+    case maps:size(JsonTerm) of
         0 ->
             [{}];
         _ ->
-            proplists:from_map(JsonMap)
+            proplists:from_map(JsonTerm)
     end.
 
 parse_data(B) when is_binary(B) ->

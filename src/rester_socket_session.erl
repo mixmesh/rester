@@ -223,11 +223,7 @@ handle_info({Tag,Socket,Data0},State=#state {socket = S}) when
       Socket =:= S#rester_socket.socket ->
     ?debug("got data ~p\n", [{Tag,Socket,Data0}]),
     maybe_flow_control(S, use, 1), %% Count down
-    try handle_socket_data(Data0, State)
-    catch error:_E ->
-	    ?debug("call failed, reason ~p\n", [_E]),
-	    ret({noreply, State})
-    end;
+    handle_socket_data(Data0, State);
 handle_info({Tag,Socket}, State) when
       (Tag =:= tcp_closed orelse Tag =:= ssl_closed),
       Socket =:= (State#state.socket)#rester_socket.socket ->

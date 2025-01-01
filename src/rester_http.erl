@@ -369,13 +369,13 @@ request(S, Req, Body, Proxy, Timeout) ->
 		    ?debug("response: ~p", [Resp]),
 		    case recv_body(S, Resp, Timeout) of
 			{ok,RespBody} ->
-			    Reponse = [format_response(Resp),?CRNL,
-				       format_hdr(Resp#http_response.headers),
-				       ?CRNL,
-				       RespBody],
-			    %% io:format("\n<<<<<<<<<<~s",[Reponse]),
-			    %% io:format("\n>>>>>>>>>>\n", []),
-			    {ok,Resp,RespBody};
+                            Reponse = [format_response(Resp),?CRNL,
+                                       format_hdr(Resp#http_response.headers),
+                                       ?CRNL,
+                                       RespBody],
+                            %% io:format("\n<<<<<<<<<<~s",[Reponse]),
+                            %% io:format("\n>>>>>>>>>>\n", []),
+                            {ok,Resp,RespBody};
 			Error ->
 			    ?debug("body: ~p", [Error]),
 			    Error
@@ -478,9 +478,9 @@ send(Socket, Method, URI, Version, H, Body, Proxy) ->
 		 H1#http_chdr { content_length = size(Body) };
 	    is_list(Body), Body =/= [],
 	    H1#http_chdr.content_length =:= undefined ->
-		 Len = iolist_size(Body),
-		 %% lists:flatlength(Body) is not correct (mixed binaries)
-		 H1#http_chdr { content_length = Len };
+                 Len = iolist_size(Body),
+                 %% lists:flatlength(Body) is not correct (mixed binaries)
+                 H1#http_chdr { content_length = Len };
 	    true ->
 		 H1
 	 end,
@@ -786,11 +786,12 @@ recv_chunk_trailer(S, Acc, Timeout) ->
 	    Error
     end.
 
+reversed_chunks_to_binary({multipart_form_data, _} = Body) ->
+    {ok, Body};
 reversed_chunks_to_binary(Bin) when is_binary(Bin) -> Bin;
 reversed_chunks_to_binary([Bin]) when is_binary(Bin) -> Bin;
 reversed_chunks_to_binary(Chunks) ->
     iolist_to_binary(lists:reverse(Chunks)).
-
 
 %% See: https://tools.ietf.org/html/rfc7578
 
@@ -811,7 +812,8 @@ recv_multipart_form_data(
             case recv_multipart_headers(Socket, Timeout, RemainingBuffer, []) of
                 {ok, Headers, StillRemainingBuffer} ->
                     case lists:keysearch(<<"Content-Type">>, 1, Headers) of
-                        {value, {_, <<"application/octet-stream">>}} ->
+                        {value, _} ->
+%                        {value, {_, <<"application/octet-stream">>}} ->
                             Filename =
                                 filename:join(
                                   ["/tmp", "form-data-" ++
