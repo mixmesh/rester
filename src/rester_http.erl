@@ -786,8 +786,7 @@ recv_chunk_trailer(S, Acc, Timeout) ->
 	    Error
     end.
 
-reversed_chunks_to_binary({multipart_form_data, _} = Body) ->
-    {ok, Body};
+reversed_chunks_to_binary({multipart_form_data, Files}) -> Files;
 reversed_chunks_to_binary(Bin) when is_binary(Bin) -> Bin;
 reversed_chunks_to_binary([Bin]) when is_binary(Bin) -> Bin;
 reversed_chunks_to_binary(Chunks) ->
@@ -810,36 +809,52 @@ recv_multipart_form_data(
     BufferSize = size(Buffer),
     case binary:split(Buffer, Separator) of
         [<<>>, RemainingBuffer] ->
-            case recv_multipart_headers(Socket, Timeout, RemainingBuffer, []) of
+            case recv_multipart_headers(
+                   Socket, Timeout, RemainingBuffer, []) of
                 {ok, Headers, StillRemainingBuffer} ->
                     case lists:keysearch(<<"Content-Type">>, 1, Headers) of
                         {value, _} ->
+                            {ok, Filename} = multipart_filename(Headers),
+                            UniqueName = erlang:unique_integer([positive]),
+                            UniqueFilename =
+                                list_to_binary(
+                                  io_lib:format("~w-~s",
+                                                [UniqueName, Filename])),
                             BaseDir =
                                 case application:get_env(
                                        rester, multipart_path, undefined) of
                                     undefined ->
-                                        "/tmp";
+                                        <<"/tmp">>;
                                     {M, F} ->
                                         M:F(OriginHeaders)
                                 end,
-                            {ok, Filename} = multipart_filename(Headers),
-                            FilePath = filename:join(BaseDir, Filename),
-                            {ok, File} = file:open(FilePath, [write, binary]),
+                            UniqueFilePath =
+                                filename:join([BaseDir, UniqueFilename]),
+                            {ok, File} =
+                                file:open(UniqueFilePath, [write, binary]),
+                            {_, ContentType} =
+                                lists:keyfind(<<"Content-Type">>, 1, Headers),
                             case recv_multipart_body(
                                    Socket, Timeout, Separator, EndSeparator,
                                    StillRemainingBuffer, File) of
                                 {separator, TrailingBuffer} ->
                                     file:close(File),
                                     recv_multipart_form_data(
-                                      Socket, OriginHeaders, Timeout, Separator,
-                                      EndSeparator, TrailingBuffer,
-                                      [{file, Filename}|Acc]);
+                                      Socket, OriginHeaders, Timeout,
+                                      Separator, EndSeparator, TrailingBuffer,
+                                      [#{filename => Filename,
+                                         unique_filename => UniqueFilename,
+                                         content_type => ContentType}|Acc]);
                                 end_separator ->
                                     file:close(File),
                                     rester_socket:setopts(
-                                      Socket, [{packet, http}, {mode, binary}]),
-                                    {ok, {multipart_form_data,
-                                          [{file, Filename}|Acc]}};
+                                      Socket, [{packet, http},
+                                               {mode, binary}]),
+                                    UpdatedFiles =
+                                        [#{filename => Filename,
+                                           unique_filename => UniqueFilename,
+                                           content_type => ContentType}|Acc],
+                                    {ok, {multipart_form_data, UpdatedFiles}};
                                 {error, Reason} ->
                                     file:close(File),
                                     rester_socket:close(Socket),
@@ -851,12 +866,13 @@ recv_multipart_form_data(
                                    StillRemainingBuffer) of
                                 {separator, Data, TrailingBuffer} ->
                                     recv_multipart_form_data(
-                                      Socket, OriginHeaders, Timeout, Separator,
-                                      EndSeparator, TrailingBuffer,
+                                      Socket, OriginHeaders, Timeout,
+                                      Separator, EndSeparator, TrailingBuffer,
                                       [{data, Headers, Data}|Acc]);
                                 {end_separator, Data} ->
                                     rester_socket:setopts(
-                                      Socket, [{packet, http}, {mode, binary}]),
+                                      Socket, [{packet, http},
+                                               {mode, binary}]),
                                     [{data, Headers, Data}|Acc];
                                 {error, Reason} ->
                                     rester_socket:close(Socket),
