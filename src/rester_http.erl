@@ -821,13 +821,8 @@ recv_multipart_form_data(
                                   io_lib:format("~w-~s",
                                                 [UniqueName, Filename])),
                             BaseDir =
-                                case application:get_env(
-                                       rester, multipart_path, undefined) of
-                                    undefined ->
-                                        <<"/tmp">>;
-                                    {M, F} ->
-                                        M:F(OriginHeaders)
-                                end,
+                                application:get_env(
+                                  rester, multipart_path, <<"/tmp">>),
                             UniqueFilePath =
                                 filename:join([BaseDir, UniqueFilename]),
                             {ok, File} =
