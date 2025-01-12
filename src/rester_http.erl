@@ -1354,6 +1354,8 @@ format_field(Key,Value) ->
 	end,
     [K,": ",V,"\r\n"].
 
+format_headers([List]) when is_list(List) ->
+    format_headers(List);
 format_headers([{Key,Value}|Hs]) ->
     [format_field(Key,Value) | format_headers(Hs)];
 format_headers([]) ->
