@@ -186,8 +186,8 @@ stop(Pid) ->
 
 init(Socket, Options) ->
     ?debug("connection on: ~p ", [Socket]),
-    {ok, _PeerName} = rester_socket:peername(Socket),
-    {ok, _SockName} = rester_socket:sockname(Socket),
+    _PeerName = rester_socket:peername(Socket),
+    _SockName = rester_socket:sockname(Socket),
     ?debug("connection from peer: ~p, sockname: ~p,"
 		"options ~p", [_PeerName, _SockName, Options]),
     %% rester_socket:setopts(Socket, [{nodelay,true}]),
