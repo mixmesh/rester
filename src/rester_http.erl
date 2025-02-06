@@ -814,12 +814,20 @@ recv_multipart_form_data(
                 {ok, Headers, StillRemainingBuffer} ->
                     case lists:keysearch(<<"Content-Type">>, 1, Headers) of
                         {value, _} ->
+                            case lists:keyfind("X-Rester-Multi-Part-Prefix", 1,
+                                               OriginHeaders#http_chdr.other) of
+                                {_Key, Value} ->
+                                    ExtraPrefix = Value;
+                                false ->
+                                    ExtraPrefix = ""
+                            end,
                             {ok, Filename} = multipart_filename(Headers),
                             UniqueName = erlang:unique_integer([positive]),
                             UniqueFilename =
                                 list_to_binary(
-                                  io_lib:format("~w-~s",
-                                                [UniqueName, Filename])),
+                                  io_lib:format(
+                                    "~s~w-~s",
+                                    [ExtraPrefix, UniqueName, Filename])),
                             BaseDir =
                                 application:get_env(
                                   rester, multipart_path, <<"/tmp">>),
