@@ -813,6 +813,7 @@ recv_multipart_form_data(
                    Socket, Timeout, RemainingBuffer, []) of
                 {ok, Headers, StillRemainingBuffer} ->
                     case lists:keysearch(<<"Content-Type">>, 1, Headers) of
+                        %% FIXME: Maybe check for "multipart/" here instead
                         {value, _} ->
                             case lists:keyfind("X-Rester-Multi-Part-Prefix", 1,
                                                OriginHeaders#http_chdr.other) of
@@ -944,27 +945,52 @@ recv_multipart_headers(Socket, Timeout, Buffer, Headers) ->
 %% "-----------------------------153796634513348781802793578094\r\nContent-Disposition: form-data; name=\"files[]\"; filename=\"FOO.txt\"\r\nContent-Type: text/plain\r\n\r\nBAR\n\r\n-----------------------------153796634513348781802793578094--\r\n"
 
 recv_multipart_body(Socket, Timeout, Separator, EndSeparator, Buffer, File) ->
-    case binary:split(Buffer, Separator) of
-        [Data, RemainingBuffer] ->
-            file:write(File, Data),
-            {separator, list_to_binary([Separator, RemainingBuffer])};
-        [_] ->
-            case binary:split(Buffer, EndSeparator) of
-                [Data, <<>>] ->
-                    file:write(File, Data),
-                    end_separator;
+    case rester_socket:recv(Socket, 0, Timeout) of
+        {ok, MoreData} ->
+            NewBuffer = list_to_binary([Buffer, MoreData]),
+            case binary:split(NewBuffer, Separator) of
+                [Data, RemainingBuffer] ->
+                    ok = file:write(File, Data),
+                    {separator, list_to_binary([Separator, RemainingBuffer])};
                 [_] ->
-                    case rester_socket:recv(Socket, 0, Timeout) of
-                        {ok, Data} ->
-                            NewBuffer = list_to_binary([Buffer, Data]),
-                            recv_multipart_body(
-                              Socket, Timeout, Separator, EndSeparator,
-                              NewBuffer, File);
-                        {error, Reason} ->
-                            {error, Reason}
+                    case binary:split(NewBuffer, EndSeparator) of
+                        [Data, <<>>] ->
+                            <<EndData:((byte_size(Data) - 2))/binary, 13, 10>> =
+                                Data,
+                            ok = file:write(File, EndData),
+                            end_separator;
+                        [_] ->
+                            ok = file:write(File, NewBuffer),
+                            recv_multipart_body(Socket, Timeout, Separator,
+                                                EndSeparator, <<>>, File)
                     end
-            end
+            end;
+        {error, Reason} ->
+            {error, Reason}
     end.
+
+%% recv_multipart_body(Socket, Timeout, Separator, EndSeparator, Buffer, File) ->
+%%     case binary:split(Buffer, Separator) of
+%%         [Data, RemainingBuffer] ->
+%%             file:write(File, Data),
+%%             {separator, list_to_binary([Separator, RemainingBuffer])};
+%%         [_] ->
+%%             case binary:split(Buffer, EndSeparator) of
+%%                 [Data, <<>>] ->
+%%                     file:write(File, Data),
+%%                     end_separator;
+%%                 [_] ->
+%%                     case rester_socket:recv(Socket, 0, Timeout) of
+%%                         {ok, Data} ->
+%%                             NewBuffer = list_to_binary([Buffer, Data]),
+%%                             recv_multipart_body(
+%%                               Socket, Timeout, Separator, EndSeparator,
+%%                               NewBuffer, File);
+%%                         {error, Reason} ->
+%%                             {error, Reason}
+%%                     end
+%%             end
+%%     end.
 
 recv_multipart_body_data(Socket, Timeout, Separator, EndSeparator, Buffer) ->
     case binary:split(Buffer, Separator) of
