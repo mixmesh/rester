@@ -153,11 +153,11 @@ connect_upgrade(X, Protos0, Timeout) ->
     ?debug("connect protos=~p", [Protos0]),
     case Protos0 of
 	[ssl|Protos1] ->
-	    Opts = X#rester_socket.opts ++ 
+	    Opts = X#rester_socket.opts ++
 		application:get_env(rester, ssl_options, []),
 	    {SSLOpts0,Opts1} = split_options(ssl_connect_opts(),Opts),
 	    {_,SSLOpts} = split_options([ssl_imp], SSLOpts0),
-	    ?debug("X options = ~p", [X#rester_socket.opts]),	    
+	    ?debug("X options = ~p", [X#rester_socket.opts]),
 	    SSLOpts1 = add_sni(X#rester_socket.opts, SSLOpts),
 	    ?debug("SSL upgrade, options = ~p", [SSLOpts]),
 	    ?debug("before ssl:connect opts=~p",
@@ -201,7 +201,7 @@ add_sni(SockOpts, SSLOpts) ->
 		    [{server_name_indication, Host}|SSLOpts]
 	    end
     end.
-    
+
 
 ssl_connect(Socket, Options, Timeout) ->
     case ssl:connect(Socket, Options, Timeout) of
@@ -476,7 +476,7 @@ ssl_connect_opts() ->
      fail_if_no_peer_cert,
      depth, cert, certfile, key, keyfile,
      password, cacerts, cacertfile, dh, dhfile, cihpers,
-     server_name_indication, 
+     server_name_indication,
      debug].
 
 
@@ -505,5 +505,3 @@ handshake(Socket, Opts, Timeout) ->
 	error:undef ->
 	    ssl:handshake(Socket, Opts, Timeout)
     end.
-
-	    

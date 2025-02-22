@@ -945,24 +945,41 @@ recv_multipart_headers(Socket, Timeout, Buffer, Headers) ->
 %% "-----------------------------153796634513348781802793578094\r\nContent-Disposition: form-data; name=\"files[]\"; filename=\"FOO.txt\"\r\nContent-Type: text/plain\r\n\r\nBAR\n\r\n-----------------------------153796634513348781802793578094--\r\n"
 
 recv_multipart_body(Socket, Timeout, Separator, EndSeparator, Buffer, File) ->
+    case binary:split(Buffer, Separator) of
+        [Data, RemainingBuffer] ->
+            ok = file:write(File, Data),
+            {separator, list_to_binary([Separator, RemainingBuffer])};
+        [_] ->
+            case binary:split(Buffer, EndSeparator) of
+                [Data, <<>>] ->
+                    <<EndData:((byte_size(Data) - 2))/binary, 13, 10>> = Data,
+                    ok = file:write(File, EndData),
+                    end_separator;
+                [_] ->
+                    ok = file:write(File, Buffer),
+                    recv_multipart_body_rest(Socket, Timeout, Separator,
+                                             EndSeparator, File)
+            end
+    end.
+
+recv_multipart_body_rest(Socket, Timeout, Separator, EndSeparator, File) ->
     case rester_socket:recv(Socket, 0, Timeout) of
         {ok, MoreData} ->
-            NewBuffer = list_to_binary([Buffer, MoreData]),
-            case binary:split(NewBuffer, Separator) of
-                [Data, RemainingBuffer] ->
+            case binary:split(MoreData, Separator) of
+                [Data, RemainingData] ->
                     ok = file:write(File, Data),
-                    {separator, list_to_binary([Separator, RemainingBuffer])};
+                    {separator, list_to_binary([Separator, RemainingData])};
                 [_] ->
-                    case binary:split(NewBuffer, EndSeparator) of
+                    case binary:split(MoreData, EndSeparator) of
                         [Data, <<>>] ->
                             <<EndData:((byte_size(Data) - 2))/binary, 13, 10>> =
                                 Data,
                             ok = file:write(File, EndData),
                             end_separator;
                         [_] ->
-                            ok = file:write(File, NewBuffer),
-                            recv_multipart_body(Socket, Timeout, Separator,
-                                                EndSeparator, <<>>, File)
+                            ok = file:write(File, MoreData),
+                            recv_multipart_body_rest(Socket, Timeout, Separator,
+                                                     EndSeparator, File)
                     end
             end;
         {error, Reason} ->

@@ -25,10 +25,10 @@ get(Url, Hs) ->
 get(Url, Version, Hs) ->
     get(Url, Version, Hs, infinity).
 
-get(Url, Version={Ma,Mi}, Hs, Timeout) 
+get(Url, Version={Ma,Mi}, Hs, Timeout)
   when is_list(Hs),
        is_integer(Ma), is_integer(Mi),
-       ((is_integer(Timeout) andalso (Timeout > 0)) 
+       ((is_integer(Timeout) andalso (Timeout > 0))
 	orelse (Timeout =:= infinity)) ->
     Req = rester_http:make_request('GET',Url,Version,Hs),
     request(Req,[],Timeout).
@@ -51,7 +51,7 @@ request(Req, Body,Timeout) ->
 %% FIXME: add
 %%   follow 301 - (Moved) and check Content-Length
 %%   follow 302 - (Found) and check Content-Length
-%% 
+%%
 request_(S, Req, Body, Proxy, Timeout) ->
     case rester_http:send(S, Req, Body, Proxy) of
 	ok ->
@@ -61,6 +61,7 @@ request_(S, Req, Body, Proxy, Timeout) ->
 		    ?debug("response: ~p", [Resp]),
 		    get_body_(S, Resp, Timeout);
 		Error ->
+
 		    ?debug("response: ~p", [Error]),
 		    Error
 	    end;
@@ -73,7 +74,7 @@ get_body_(S, Resp, Timeout) ->
 			 "mixmesh", "cache"]),
     CacheCopy = filename:join(Dir, "content.dat"),
     {ok, Fd} = file:open(CacheCopy, [write]),
-    try rester_http:recv_body(S, Resp, 
+    try rester_http:recv_body(S, Resp,
 			      fun (Chunk, {Size,Acc}) ->
 				      ok = file:write(Fd, Chunk),
 				      Size1 = Size + byte_size(Chunk),
@@ -105,10 +106,10 @@ get_body_(S, Resp, Timeout) ->
 %%   Content-Length:
 %%   Cache-Control:
 %%   Age:
-%%    
+%%
 write_meta(Dir, Resp) ->
     Meta = filename:join(Dir, "meta.txt"),
     {ok, Fd1} = file:open(Meta, [write]),
-    io:format(Fd1, "~p.\n", 
+    io:format(Fd1, "~p.\n",
 	      [rester_http:fmt_shdr(Resp#http_response.headers)]),
     file:close(Fd1).
